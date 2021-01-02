@@ -1,0 +1,4 @@
+vedas
+*.o
+.vscode
+PrivateVedas.*
