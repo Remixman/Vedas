@@ -3,18 +3,22 @@
 
 #include <vector>
 #include <thread>
+#include <functional>
 #include "vedas.h"
 #include "concurrentqueue.h"
 
 class ExecutionWorker {
 public:
-  ExecutionWorker(size_t gpu_num);
+  ExecutionWorker();
+  ExecutionWorker(int gpu_num);
 
-  bool pushTask(size_t threadNo, function<int<void>> f);
+  bool pushTask(size_t threadNo, std::function<int(void)> f);
 private:
-  size_t gpu_num;
+  int gpu_num;
   std::vector<std::thread> threads;
-  std::vector<moodycamel::ConcurrentQueue<function<int(void)>>> work_queues;
-}
+  std::vector<moodycamel::ConcurrentQueue<std::function<int(void)>>> work_queues;
+
+  void initialize(int gpu_num);
+};
 
 #endif

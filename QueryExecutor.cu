@@ -8,9 +8,11 @@
 #include <thrust/binary_search.h>
 #include <thrust/execution_policy.h>
 #include <thrust/scan.h>
+#include "ExecutionPlanTree.h"
 #include "QueryExecutor.h"
 #include "QueryPlan.h"
 #include "JoinQueryJob.h"
+#include "JoinGraph/JoinGraph.h"
 
 REVERSE_DICTTYPE *QueryExecutor::r_so_map;
 REVERSE_DICTTYPE *QueryExecutor::r_p_map;
@@ -42,19 +44,6 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
 
         return;
     }
-#if 0
-    // Generic planner / optimizer
-    for (size_t i = 0; i < sparqlQuery.getPatternNum(); i++) {
-        plan.addQueryPattern(sparqlQuery.getPatternPtr(i));
-    }
-    plan.findBestPlan();
-
-    // TODO: generate plan
-    for (size_t i = 0; i < sparqlQuery.getPatternNum(); i++) {
-        TriplePattern& pattern = sparqlQuery.getPattern(i);
-        plan.pushJob(this->createSelectQueryJob(pattern));
-    }
-#endif
 
     // Copy selected variables for filter
     selected_variables = sparqlQuery.getSelectedVariables();
@@ -63,6 +52,25 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
     printBounds();
     estimateRelationSize();
 
+#if 1
+    JoinGraph joinGraph(&sparqlQuery); // Construct the join graph
+    ExecutionPlanTree *planTree = joinGraph.createPlan();
+    std::cout << "====================================================\n";
+    std::cout << "|               Execution Plan Tree                |\n";
+    std::cout << "====================================================\n";
+    planTree->printSequentialOrder();
+    std::cout << "Length : " << planTree->getNodeList().size() << "\n";
+    std::cout << "====================================================\n";
+    for (auto node : planTree->getNodeList()) {
+        if (node->planOp == UPLOAD) {
+            plan.pushJob(this->createSelectQueryJob(node->tp, node->index));
+        } else if (node->planOp == JOIN) {
+            QueryJob* job1 = plan.getJob(node->children[0]->order - 1);
+            QueryJob* job2 = plan.getJob(node->children[1]->order - 1);
+            plan.pushJob(new JoinQueryJob(job1, job2, node->joinVariable, context, &variables_bound));
+        }
+    }
+#else
     switch (plan_id) {
         case 1: // S1
 
@@ -385,6 +393,7 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
             }
             break;
     }
+#endif
 
     auto planing_end = std::chrono::high_resolution_clock::now();
 #ifdef TIME_DEBUG

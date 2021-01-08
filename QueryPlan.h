@@ -5,7 +5,6 @@
 #include <string>
 #include <unordered_map>
 #include "ctpl_stl.h"
-#include "PlanNode.h"
 #include "QueryJob.h"
 #include "SelectQueryJob.h"
 #include "SparqlResult.h"
@@ -22,11 +21,6 @@ public:
     std::vector<QueryJob*>& getParallelJobs(size_t i);
     void setJoinVariables(std::vector<std::string> variables);
     void setSelectVariables(std::vector<std::string> variables);
-
-    // General case
-    void addQueryPattern(TriplePattern *pattern);
-    void findBestPlan();
-    // End general case
 
     size_t size() const;
     size_t parallelSize() const;
@@ -50,10 +44,6 @@ private:
 
     // For logging
     std::vector<unsigned int> join_sizes;
-
-    void addJoinPlanNode(std::string joinVar);
-    // void addSelectPlanNode(SelectQueryJob *job);
-    void addSelectPlanNode(TriplePattern *pattern);
 };
 
 #endif // QUERYPLAN_H

@@ -87,10 +87,12 @@ void QueryPlan::execute(SparqlResult &sparqlResult, bool parallel_plan) {
 
             // Loging join size
             JoinQueryJob *joinJob = dynamic_cast<JoinQueryJob*>(job);
-            std::tuple<unsigned, unsigned, unsigned> join_size;
-            std::get<0>(join_size) = joinJob->getLeftIRSize();
-            std::get<1>(join_size) = joinJob->getRightIRSize();
-            std::get<2>(join_size) = dynamic_cast<FullRelationIR*>(joinJob->getIR())->size();
+            if (joinJob != nullptr) {
+                std::tuple<unsigned, unsigned, unsigned> join_size;
+                std::get<0>(join_size) = joinJob->getLeftIRSize();
+                std::get<1>(join_size) = joinJob->getRightIRSize();
+                std::get<2>(join_size) = dynamic_cast<FullRelationIR*>(joinJob->getIR())->size();
+            }
 
 #ifdef TIME_DEBUG
             std::cout << "Query(" << i << ") time : " << std::setprecision(3) << std::chrono::duration_cast<std::chrono::microseconds>(finish-start).count() << " microseconds\n"; i++;
@@ -120,83 +122,11 @@ void QueryPlan::plan() {
     }
 }
 
-void QueryPlan::addQueryPattern(TriplePattern *pattern) {
-    this->query_patterns.push_back(pattern);
-}
-
 void countVariable(std::map<std::string, size_t> &variable_counter, std::string v) {
     if (variable_counter.count(v))
         variable_counter[v] += 1;
     else
         variable_counter[v] = 1;
-}
-
-void QueryPlan::findBestPlan() {
-
-    for (auto pattern : query_patterns) {
-        if (pattern->subjectIsVariable()) countVariable(query_variable_counter, pattern->getSubject());
-        if (pattern->predicateIsVariable()) countVariable(query_variable_counter, pattern->getPredicate());
-        if (pattern->objectIsVariable()) countVariable(query_variable_counter, pattern->getObject());
-    }
-
-#ifdef DEBUG
-    std::cout << "Variable Count : \n";
-#endif
-    // Create join node from join variable
-    for (auto var : query_variable_counter) {
-#ifdef DEBUG
-        std::cout << var.first << " : " << var.second << "\n";
-#endif
-        if (var.second > 1) {
-            join_variables.push_back(var.first);
-            addJoinPlanNode(var.first);
-        }
-    }
-
-    // Find triple pattern related to join variables
-    for (auto pattern : query_patterns) {
-        addSelectPlanNode(pattern);
-    }
-}
-
-void QueryPlan::addJoinPlanNode(std::string joinVar) {
-    plan_adj_list.push_back(std::vector<size_t>());
-    size_t idx = plan_adj_list.size() - 1;
-    var_node_map[joinVar] = idx;
-}
-
-//void QueryPlan::addSelectPlanNode(SelectQueryJob *job) {
-//    plan_adj_list.push_back(std::vector<size_t>());
-//    size_t idx = plan_adj_list.size() - 1;
-//    // select_node_map[job] = idx;
-
-//    for (size_t i = 0; i < job->getVariableNum(); ++i) {
-//        size_t var_idx = var_node_map[job->getVariable(i)];
-//        plan_adj_list[var_idx].push_back(idx);
-//        plan_adj_list[idx].push_back(var_idx);
-//    }
-//}
-
-void QueryPlan::addSelectPlanNode(TriplePattern *pattern) {
-    plan_adj_list.push_back(std::vector<size_t>());
-    size_t idx = plan_adj_list.size() - 1;
-    select_node_map[pattern] = idx;
-
-    if (pattern->subjectIsVariable() && query_variable_counter[pattern->getSubject()] > 1) {
-        size_t var_idx = var_node_map[pattern->getSubject()];
-        plan_adj_list[var_idx].push_back(idx);
-        plan_adj_list[idx].push_back(var_idx);
-    }
-    if (pattern->predicateIsVariable() && query_variable_counter[pattern->getPredicate()] > 1) {
-        size_t var_idx = var_node_map[pattern->getPredicate()];
-        plan_adj_list[var_idx].push_back(idx);
-        plan_adj_list[idx].push_back(var_idx);
-    }
-    if (pattern->objectIsVariable() && query_variable_counter[pattern->getObject()] > 1) {
-        size_t var_idx = var_node_map[pattern->getObject()];
-        plan_adj_list[var_idx].push_back(idx);
-        plan_adj_list[idx].push_back(var_idx);
-    }
 }
 
 void QueryPlan::print() const {

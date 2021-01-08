@@ -127,14 +127,6 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
     // inner join
     TYPEID* leftRelationPtr = lir->getRelationRawPointer(lJoinIdx);
     TYPEID* rightRelationPtr = rir->getRelationRawPointer(rJoinIdx);
-//    auto b = lir->getRelation(lJoinIdx);
-//    for (auto it = b->begin(); it != b->begin() + 100; ++it) {
-//        std::cout << *it << " ";
-//    }std::cout << "\n";
-//     auto a = rir->getRelation(rJoinIdx);
-//     for (auto it = a->begin(); it != a->begin() + 100; ++it) {
-//         std::cout << *it << " ";
-//     }std::cout << "\n";
 
     auto join_start = std::chrono::high_resolution_clock::now();
     mgpu::mem_t<int2> joined_d = mgpu::inner_join(

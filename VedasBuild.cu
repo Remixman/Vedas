@@ -38,6 +38,7 @@ int main(int argc, char **argv) {
     shuffle_dict(subjects, predicates, objects, so_map, p_map, r_so_map, r_p_map);
     auto end_start = std::chrono::high_resolution_clock::now();*/
 
+    /* BFS */
     reassign_dict(subjects, predicates, objects, so_map, p_map, r_so_map, r_p_map);
 
     std::string dict_path = argv[1]; dict_path += ".vdd";

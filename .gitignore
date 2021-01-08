@@ -1,4 +1,12 @@
 vedas
+vdBuild
+vdClean
+vdQuery
+*.vdd
+*.vds
 *.o
+*.nt
+tools/*.txt
+tools/*.graphml
 .vscode
 PrivateVedas.*
