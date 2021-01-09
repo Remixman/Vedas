@@ -5,8 +5,10 @@
 ## Dependencies
 - ModernGPU
 - Thrust
+- [Raptor RDF Syntax Library](http://librdf.org/raptor/INSTALL.html)
+- [Rasqal RDF Query Library](http://librdf.org/rasqal/INSTALL.html)
 
-## Installation
+## Build
 ```bash
 make
 ```

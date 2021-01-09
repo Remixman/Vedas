@@ -110,19 +110,10 @@ void SelectQueryJob::startJob() {
         else
             fullIr->setRelation(0, data->begin() + data_offst_pair.first, data->begin() + data_offst_pair.second);
         auto upload_end = std::chrono::high_resolution_clock::now();
-
         QueryExecutor::upload_ms += std::chrono::duration_cast<std::chrono::milliseconds>(upload_end-upload_start).count();
-
-#ifdef TIME_DEBUG
-        std::cout << "Full relation upload time : " << std::setprecision(3) << std::chrono::duration_cast<std::chrono::milliseconds>(upload_end-upload_start).count()
-             << " ms. (Data size = " << data_offst_pair.second - data_offst_pair.first << ")\n";
-#endif
 
         intermediateResult = fullIr;
     } else if (getVariableNum() == 2) {
-
-//        std::cout << "L2 START OFFSET : " << l2_offst.first << "\n";
-//        std::cout << "L2 END OFFSET : " << l2_offst.second << "\n";
 
         // Find variable bound
         if (variables_bound != nullptr && variables_bound->count(this->variables[0]) > 0) {
@@ -177,7 +168,7 @@ void SelectQueryJob::startJob() {
 
         // Copy only first column
         if (!is_second_var_used) {
-            std::cout << "\tDONT USE " << this->variables[1] << " - size : " << l2_offst.second - l2_offst.first << "\n";
+            // std::cout << "\tDONT USE " << this->variables[1] << " - size : " << l2_offst.second - l2_offst.first << "\n";
             FullRelationIR *fullIr = new FullRelationIR(1, l2_offst.second - l2_offst.first);
             fullIr->setHeader(0, variables[0], is_predicates[0]);
             auto upload_start = std::chrono::high_resolution_clock::now();
@@ -354,8 +345,7 @@ void SelectQueryJob::startJobCpu() {
         }std::cout << "\n";
 #endif
 
-        //std::cout << "\nLoad Indexed Relation\n";
-        //indexIr->print();
+        //std::cout << "\nLoad Indexed Relation\n"; indexIr->print();
 
         intermediateResult = indexIr;
     } else {

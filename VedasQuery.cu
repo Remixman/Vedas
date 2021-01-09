@@ -24,7 +24,6 @@
 using namespace mgpu;
 using namespace std;
 
-void save_dict(const char *fname, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map);
 void load_dict(const char *fname, DICTTYPE &so_map, DICTTYPE &p_map, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map);
 
 int main(int argc, char **argv) {
@@ -51,7 +50,7 @@ int main(int argc, char **argv) {
     
     
     int poolSize = 2; // TODO: set thread pool size fron argument
-    ctpl::thread_pool threadPool(poolSize);    
+    ctpl::thread_pool threadPool(poolSize);
     
 #if 0
     if (input.cmdOptionExists("-h")) { }
@@ -138,9 +137,6 @@ int main(int argc, char **argv) {
                 // assert(false);
             }
             sin.close();
-#ifdef VERBOSE_DEBUG
-            std::cout << "Choose plan id : " << plan_id << "\n";
-#endif
         } else if (op == "exit") {
             break;
         } else {
@@ -182,20 +178,6 @@ int main(int argc, char **argv) {
     }
 
     return 0;
-}
-
-void save_dict(const char *fname, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map) {
-    std::ofstream out;
-    out.open(fname, std::fstream::out);
-
-    out << r_so_map.size() << "\n";
-    for (auto it = r_so_map.begin(); it != r_so_map.end(); ++it)
-        out << it->first << " " << it->second << "\n";
-    out << r_p_map.size() << "\n";
-    for (auto it = r_p_map.begin(); it != r_p_map.end(); ++it)
-        out << it->first << " " << it->second << "\n";
-
-    out.close();
 }
 
 void load_dict(const char *fname, DICTTYPE &so_map, DICTTYPE &p_map, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map) {

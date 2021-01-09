@@ -127,14 +127,29 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
     // inner join
     TYPEID* leftRelationPtr = lir->getRelationRawPointer(lJoinIdx);
     TYPEID* rightRelationPtr = rir->getRelationRawPointer(rJoinIdx);
-
+    size_t column_num = lir->getColumnNum() + rir->getColumnNum() - 1 /* join column */;
+    
     auto join_start = std::chrono::high_resolution_clock::now();
+    
+    /* If left or right is zero */
+    if (lir->size() == 0 || rir->size() == 0) {
+        FullRelationIR *newIr = new FullRelationIR(column_num, 0);
+        
+        size_t headerIdx = 0;
+        size_t lSize = lir->getColumnNum();
+        size_t rSize = rir->getColumnNum();
+        newIr->setHeader(headerIdx++, lir->getHeader(lJoinIdx), lir->getIsPredicate(lJoinIdx));
+        for (size_t i = 1; i < lSize; ++i) newIr->setHeader(headerIdx++, lir->getHeader(i), lir->getIsPredicate(i));
+        for (size_t i = 1; i < rSize; ++i) newIr->setHeader(headerIdx++, rir->getHeader(i), rir->getIsPredicate(i));
+    }
+    
     mgpu::mem_t<int2> joined_d = mgpu::inner_join(
       leftRelationPtr, static_cast<int>(lir->getRelationSize(lJoinIdx)),
       rightRelationPtr, static_cast<int>(rir->getRelationSize(rJoinIdx)),
       mgpu::less_t<TYPEID>(), *context);
     auto join_end = std::chrono::high_resolution_clock::now();
     QueryExecutor::join_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(join_end-join_start).count();
+
 #ifdef TIME_DEBUG
     std::cout << "\tJoin time : " << std::chrono::duration_cast<std::chrono::microseconds>(join_end-join_start).count() << " microsecond ( " <<
                  lir->getRelationSize(lJoinIdx) << " x " << rir->getRelationSize(rJoinIdx) << ")\n";
@@ -142,8 +157,7 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
 #endif
 
     size_t result_size = joined_d.size();
-    // std::cout << "\tFull relation join size : " << result_size << "\n";
-    size_t column_num = lir->getColumnNum() + rir->getColumnNum() - 1 /* join column */;
+    
 
     // return new FullRelationIR with union of headers, start with join variable
     FullRelationIR *newIr = new FullRelationIR(column_num, result_size);
@@ -230,7 +244,6 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
             int left_idx = joinPtr[index].x;
             int right_idx = joinPtr[index].y;
             size_t resultIdx = 1;
-
             firstCol[index] = lJoinCol[left_idx];
 
             for (size_t i = 1; i < lSize; ++i) {
@@ -244,19 +257,22 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
     auto bp_end = std::chrono::high_resolution_clock::now();
     QueryExecutor::join_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(bp_end-bp_start).count();
 
-#if 0
-    auto copy_start = std::chrono::high_resolution_clock::now();
-    TYPEID start_value = (*newIr->getRelation(0))[0];
-    TYPEID end_value = (*newIr->getRelation(0))[result_size-1];
-//    newIr->getRelationRawPointer(0)
-    auto copy_end = std::chrono::high_resolution_clock::now();
+#ifdef UPDATE_BOUND_AFTER_JOIN
+    if (result_size > 0) {
+        auto copy_start = std::chrono::high_resolution_clock::now();
+        TYPEID start_value = (*newIr->getRelation(0))[0];
+        TYPEID end_value = (*newIr->getRelation(0))[result_size-1];
+        auto copy_end = std::chrono::high_resolution_clock::now();
 
-    auto update_bound_start = std::chrono::high_resolution_clock::now();
-    auto bound = (*variables_bound)[joinVariable];
-    auto new_min = std::max(bound.first, start_value);
-    auto new_max = std::min(bound.second, end_value);
-    (*variables_bound)[joinVariable] = std::make_pair(new_min, new_max);
-    auto update_bound_end = std::chrono::high_resolution_clock::now();
+        auto update_bound_start = std::chrono::high_resolution_clock::now();
+        QueryExecutor::updateBoundDict(variables_bound, joinVariable, start_value, end_value);
+        auto update_bound_end = std::chrono::high_resolution_clock::now();
+    } else {
+        /* result_size == 0 */
+        auto update_bound_start = std::chrono::high_resolution_clock::now();
+        QueryExecutor::updateBoundDict(variables_bound, joinVariable, 0, 0);
+        auto update_bound_end = std::chrono::high_resolution_clock::now();
+    }
 #endif
 
     // delete [] newIrRelations;
@@ -271,8 +287,8 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
     // std::cout << "\tD2D memory copy time : " << std::chrono::duration_cast<std::chrono::microseconds>(d2d_copy_end-d2d_copy_start).count() << " microsecond\n";
     std::cout << "\tFull relation upload time : " << std::chrono::duration_cast<std::chrono::microseconds>(bp_end-bp_start).count() << " microsecond\n";
     std::cout << "\tJoin function time : " << std::chrono::duration_cast<std::chrono::microseconds>(join_func_end-join_func_start).count() << " microsecond\n";
-    //std::cout << "Copy bound from GPU time : " << std::chrono::duration_cast<std::chrono::microseconds>(copy_end-copy_start).count() << " microsecond\n";
-    //std::cout << "Update bound time : " << std::chrono::duration_cast<std::chrono::microseconds>(update_bound_end-update_bound_start).count() << " microsecond\n";
+    // std::cout << "Copy bound from GPU time : " << std::chrono::duration_cast<std::chrono::microseconds>(copy_end-copy_start).count() << " microsecond\n";
+    // std::cout << "Update bound time : " << std::chrono::duration_cast<std::chrono::microseconds>(update_bound_end-update_bound_start).count() << " microsecond\n";
 #endif
 
     return newIr;

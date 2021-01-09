@@ -1,3 +1,6 @@
+#include <iostream>
+#include <fstream>
+#include <sstream>
 #include <cassert>
 #include "ExecutionPlanTree.h"
 
@@ -48,6 +51,40 @@ void ExecutionPlanTree::printSequentialOrder() const {
     for (auto node : nodeList) {
         node->print();
     }
+}
+
+std::string ExecutionPlanTree::graphvizNodeDescription(ExecPlanTreeNode * node) {
+    std::stringstream ss;
+    std::string name = "";
+    if (node->planOp == UPLOAD) {
+        ss << "upload" << node->order << "";
+    } else {
+        ss << "join" << node->order << "";
+    }
+
+    return ss.str();
+}
+
+void ExecutionPlanTree::writeGraphvizTreeFile(std::string &fileName) {
+    std::ofstream gvfile(fileName, std::ios::out);
+
+    gvfile << "digraph \"EXECUTION PLAN\" {\n";
+    // Node list
+    for (auto node : nodeList) {
+        gvfile << graphvizNodeDescription(node) << "\n";
+    }
+    // Edge list
+    for (auto node : nodeList) {
+        if (node->parent != nullptr) {
+            gvfile << ((node->planOp == UPLOAD)? "upload" : "join")
+                   << node->order << " -> "
+                   << ((node->parent->planOp == UPLOAD)? "upload" : "join")
+                   << node->parent->order << "\n";
+        }
+    }
+    gvfile << "}\n";
+
+    gvfile.close();
 }
 
 std::vector<ExecPlanTreeNode *> ExecutionPlanTree::getNodeList() const {

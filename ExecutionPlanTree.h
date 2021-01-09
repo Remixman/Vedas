@@ -39,10 +39,13 @@ public:
 
     void printTree() const;
     void printSequentialOrder() const;
+    void writeGraphvizTreeFile(std::string &fileName);
     std::vector<ExecPlanTreeNode *> getNodeList() const;
 private:
     size_t lastOrder = 0;
     std::vector<ExecPlanTreeNode *> nodeList;
+
+    std::string graphvizNodeDescription(ExecPlanTreeNode * node);
 };
 
 #endif

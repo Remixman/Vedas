@@ -14,6 +14,7 @@
 #include "SparqlResult.h"
 #include "VedasStorage.h"
 #include "QueryJob.h"
+#include "QueryPlan.h"
 #include "SelectQueryJob.h"
 #include "JoinQueryJob.h"
 
@@ -22,6 +23,8 @@ public:
     QueryExecutor(VedasStorage* vedasStorage, ctpl::thread_pool *threadPool, bool parallel_plan, mgpu::standard_context_t* context, int plan_id);
     void query(SparqlQuery &sq, SparqlResult &sr);
 
+    static void updateBoundDict(std::map< std::string, std::pair<TYPEID, TYPEID> > *bound,
+                                std::string &variable, TYPEID lowerBound, TYPEID upperBound);
     static std::pair<size_t, size_t> findL2OffsetFromL1(TYPEID_HOST_VEC *l1_index_values, TYPEID_HOST_VEC *l1_index_offsets, TYPEID id1, size_t n);
     static std::pair<size_t, size_t> findDataOffsetFromL2(TYPEID_HOST_VEC *l2_index_values, TYPEID_HOST_VEC *l2_index_offsets,
                                                           TYPEID l1_offst_lower_bound, TYPEID l1_offst_upper_bound, TYPEID id2, size_t n);
@@ -57,6 +60,8 @@ private:
     void squeezeQueryBound2Var(TriplePattern *pattern);
 
     void estimateRelationSize();
+
+    void manualSchedule(QueryPlan &plan, SparqlQuery &sparqlQuery); // XXX: remove this later
 
     SelectQueryJob* createSelectQueryJob(TriplePattern *pattern, std::string index_used = "", std::pair<TYPEID, TYPEID> *bound = nullptr);
     SelectQueryJob* create1VarSelectQueryJob(TriplePattern *pattern, std::string index_used = "", std::pair<TYPEID, TYPEID> *bound = nullptr);
