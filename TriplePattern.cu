@@ -6,8 +6,9 @@
 
 using namespace std;
 
-TriplePattern::TriplePattern(std::string name, std::string s, std::string p, std::string o,
+TriplePattern::TriplePattern(size_t id, std::string &name, std::string &s, std::string &p, std::string &o,
                              DICTTYPE &so_dict, DICTTYPE &p_dict) {
+  this->id = id;
   this->isVar[0] = (s.size() > 0 && s[0] == '?');
   this->isVar[1] = (p.size() > 0 && p[0] == '?');
   this->isVar[2] = (o.size() > 0 && o[0] == '?');
@@ -37,6 +38,7 @@ TriplePattern::TriplePattern(std::string name, std::string s, std::string p, std
   this->name = name;
 }
 
+size_t TriplePattern::getId() const { return this->id; }
 std::string TriplePattern::getName() const { return this->name; }
 TYPEID TriplePattern::getSubjectId() const { return this->subject_id; }
 TYPEID TriplePattern::getPredicateId() const { return this->predicate_id; }
@@ -72,4 +74,11 @@ void TriplePattern::print() const {
     else std::cout << object_id;
 
     std::cout << "\n";
+}
+
+std::string TriplePattern::toString() const {
+    return "(" + 
+        ((isVar[0])? subject : std::to_string(subject_id)) + "," +
+        ((isVar[1])? predicate : std::to_string(predicate_id)) + "," +
+        ((isVar[2])? object : std::to_string(object_id)) + ")";
 }

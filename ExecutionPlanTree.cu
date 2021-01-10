@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
 #include <cassert>
 #include "ExecutionPlanTree.h"
 
@@ -57,16 +58,23 @@ std::string ExecutionPlanTree::graphvizNodeDescription(ExecPlanTreeNode * node) 
     std::stringstream ss;
     std::string name = "";
     if (node->planOp == UPLOAD) {
-        ss << "upload" << node->order << "";
+        ss << "upload" << node->order << "[shape=none, label=< <b>tp<sub>1</sub>(" << node->order << ")</b><br/>" 
+           << node->tp->toString() << "<br/>|tp<sub>" << node->tp->getId() << "</sub>|="
+           << node->resultSize << "<br/><font point-size=\"10\">"
+           << std::setprecision(2) << node->nanosecTime/1E6 << " ms.</font> >]";
     } else {
-        ss << "join" << node->order << "";
+        ss << "join" << node->order << " [shape=none, label=< <b>join<sub>" << node->joinVariable 
+           << "</sub>(" << node->order << ")</b><br/>Result=" << node->resultSize << "<br/><font point-size=\"10\">"
+           << std::setprecision(2) << node->nanosecTime/1E6 << " ms.</font> >]";
     }
 
     return ss.str();
 }
 
-void ExecutionPlanTree::writeGraphvizTreeFile(std::string &fileName) {
+void ExecutionPlanTree::writeGraphvizTreeFile(std::string fileName) {
     std::ofstream gvfile(fileName, std::ios::out);
+
+    // dot -Tpng <fileName>.gv -o plan.png
 
     gvfile << "digraph \"EXECUTION PLAN\" {\n";
     // Node list
@@ -76,10 +84,10 @@ void ExecutionPlanTree::writeGraphvizTreeFile(std::string &fileName) {
     // Edge list
     for (auto node : nodeList) {
         if (node->parent != nullptr) {
-            gvfile << ((node->planOp == UPLOAD)? "upload" : "join")
-                   << node->order << " -> "
-                   << ((node->parent->planOp == UPLOAD)? "upload" : "join")
-                   << node->parent->order << "\n";
+            gvfile << ((node->parent->planOp == UPLOAD)? "upload" : "join")
+                   << node->parent->order << " -> "
+                   << ((node->planOp == UPLOAD)? "upload" : "join")
+                   << node->order << " [dir=none]\n";
         }
     }
     gvfile << "}\n";

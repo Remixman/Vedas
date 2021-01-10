@@ -57,8 +57,13 @@ void JoinQueryJob::startJob() {
         assert(false);
 
     auto join_end = std::chrono::high_resolution_clock::now();
+    auto totalNanosec = std::chrono::duration_cast<std::chrono::nanoseconds>(join_end-join_start).count();
+    
+    FullRelationIR *ir = dynamic_cast<FullRelationIR *>(intermediateResult);
+    this->planTreeNode->resultSize = ir->size();
+    this->planTreeNode->nanosecTime = totalNanosec;
 
-    QueryExecutor::join_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(join_end-join_start).count();
+    QueryExecutor::join_ns += totalNanosec;
 }
 
 mgpu::mem_t<int2> JoinQueryJob::innerJoinMulti(TYPEID* a, int a_count, TYPEID* b, int b_count) {

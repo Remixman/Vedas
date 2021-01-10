@@ -5,6 +5,7 @@
 #include <chrono>
 #include <iomanip>
 #include <utility>
+#include <sstream>
 #include <thrust/binary_search.h>
 #include <thrust/execution_policy.h>
 #include <thrust/scan.h>
@@ -58,15 +59,18 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
     std::cout << "|               Execution Plan Tree                |\n";
     std::cout << "====================================================\n";
     planTree->printSequentialOrder();
-    std::cout << "Length : " << planTree->getNodeList().size() << "\n";
     std::cout << "====================================================\n";
     for (auto node : planTree->getNodeList()) {
         if (node->planOp == UPLOAD) {
-            plan.pushJob(this->createSelectQueryJob(node->tp, node->index));
+            SelectQueryJob *job = this->createSelectQueryJob(node->tp, node->index);
+            job->planTreeNode = node;
+            plan.pushJob(job);
         } else if (node->planOp == JOIN) {
             QueryJob* job1 = plan.getJob(node->children[0]->order - 1);
             QueryJob* job2 = plan.getJob(node->children[1]->order - 1);
-            plan.pushJob(new JoinQueryJob(job1, job2, node->joinVariable, context, &variables_bound));
+            JoinQueryJob* joinJob = new JoinQueryJob(job1, job2, node->joinVariable, context, &variables_bound);
+            joinJob->planTreeNode = node;
+            plan.pushJob(joinJob);
         }
     }
 #else
@@ -80,6 +84,10 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
 
     // plan.print();
     plan.execute(sparqlResult, parallel_plan);
+    auto unixtime = std::chrono::system_clock::now();
+    std::stringstream ss;
+    ss << "plan_" << std::chrono::duration_cast<std::chrono::seconds>(unixtime.time_since_epoch()).count() << ".gv";
+    planTree->writeGraphvizTreeFile(ss.str());
 }
 
 void QueryExecutor::printBounds() const {

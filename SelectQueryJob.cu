@@ -70,7 +70,8 @@ SelectQueryJob::~SelectQueryJob() {
 }
 
 void SelectQueryJob::startJob() {
-    // std::cout << "SELECT FOR ID " << dataid[0] << "\n";
+    auto upload_job_start = std::chrono::high_resolution_clock::now();
+
     auto l2_offst = QueryExecutor::findL2OffsetFromL1(l1_index_values, l1_index_offsets, dataid[0], data->size());
 
     if (getVariableNum() == 1) {
@@ -122,12 +123,9 @@ void SelectQueryJob::startJob() {
                 TYPEID curr_min = *(l2_data->begin() + l2_offst.first);
                 TYPEID curr_max = *(l2_data->begin() + l2_offst.second - 1);
 #ifdef TIME_DEBUG
-                std::cout << "\tCURRENT MIN_ : " << curr_min << "\n";
-                std::cout << "\tBOUNDED MIN_ : " << bound.first << "\n";
-                std::cout << "\tCURRENT MAX_ : " << curr_max << "\n";
-                std::cout << "\tBOUNDED MAX_ : " << bound.second << "\n";
+                std::cout << "\tCURRENT MIN : " << curr_min << "\tBOUNDED MIN : " << bound.first << "\n";
+                std::cout << "\tCURRENT MAX : " << curr_max << "\tBOUNDED MAX : " << bound.second << "\n";
 #endif
-
                 auto l2_begin = l2_data->begin() + l2_offst.first;
                 auto l2_end = l2_data->begin() + l2_offst.second;
 
@@ -143,10 +141,8 @@ void SelectQueryJob::startJob() {
                 TYPEID curr_min = *(l2_index_values->begin() + l2_offst.first);
                 TYPEID curr_max = *(l2_index_values->begin() + l2_offst.second - 1);
 #ifdef TIME_DEBUG
-                std::cout << "\tCURRENT MIN : " << curr_min << "\n";
-                std::cout << "\tBOUNDED MIN : " << bound.first << "\n";
-                std::cout << "\tCURRENT MAX : " << curr_max << "\n";
-                std::cout << "\tBOUNDED MAX : " << bound.second << "\n";
+                std::cout << "\tCURRENT MIN : " << curr_min << "\tBOUNDED MIN : " << bound.first << "\n";
+                std::cout << "\tCURRENT MAX : " << curr_max << "\tBOUNDED MAX : " << bound.second << "\n";
 #endif
                 auto l2_begin = l2_index_values->begin() + l2_offst.first;
                 auto l2_end = l2_index_values->begin() + l2_offst.second;
@@ -253,6 +249,13 @@ void SelectQueryJob::startJob() {
 #endif
 
         intermediateResult = fullIr;
+
+        auto upload_job_end = std::chrono::high_resolution_clock::now();
+        auto totalNanosec = std::chrono::duration_cast<std::chrono::nanoseconds>(upload_job_end-upload_job_start).count();
+    
+        FullRelationIR *ir = dynamic_cast<FullRelationIR *>(intermediateResult);
+        this->planTreeNode->resultSize = ir->size();
+        this->planTreeNode->nanosecTime = totalNanosec;
     } else {
         assert(false);
     }

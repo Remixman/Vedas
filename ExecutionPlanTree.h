@@ -18,6 +18,9 @@ struct ExecPlanTreeNode {
     std::vector<ExecPlanTreeNode *> children; // For JOIN only
     std::string joinVariable;                 // For JOIN only
 
+    int resultSize = 0;
+    double nanosecTime = 0.0;
+
     void print() {
         std::cout << "(OP " << std::setw(3) << order << ") : ";
         if (planOp == UPLOAD) {
@@ -39,7 +42,7 @@ public:
 
     void printTree() const;
     void printSequentialOrder() const;
-    void writeGraphvizTreeFile(std::string &fileName);
+    void writeGraphvizTreeFile(std::string fileName);
     std::vector<ExecPlanTreeNode *> getNodeList() const;
 private:
     size_t lastOrder = 0;

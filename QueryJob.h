@@ -2,6 +2,7 @@
 #define QUERYJOB_H
 
 #include "IR.h"
+#include "ExecutionPlanTree.h"
 
 class QueryJob
 {
@@ -11,6 +12,7 @@ public:
     virtual IR* getIR() = 0;
     virtual void startJob() = 0;
     virtual void print() const = 0;
+    ExecPlanTreeNode *planTreeNode;
 protected:
     IR* intermediateResult { nullptr };
 };

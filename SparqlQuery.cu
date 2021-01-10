@@ -64,7 +64,7 @@ SparqlQuery::SparqlQuery(const char *q, DICTTYPE &so_map, DICTTYPE &p_map) {
         std::cout << "PARSED PATTERN ( " << subject << " , " << predicate << " , " << object << " )\n";
 #endif
         std::string query_name = "q" + std::to_string(triple_idx);
-        TriplePattern pattern(query_name, subject, predicate, object, so_map, p_map);
+        TriplePattern pattern(triple_idx, query_name, subject, predicate, object, so_map, p_map);
         this->patterns.push_back(pattern);
 
         triple_idx++;

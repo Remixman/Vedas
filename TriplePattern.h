@@ -6,7 +6,8 @@
 
 class TriplePattern {
   public:
-    TriplePattern(std::string name, std::string s, std::string p, std::string o, DICTTYPE &so_dict, DICTTYPE &p_dict);
+    TriplePattern(size_t id, std::string &name, std::string &s, std::string &p, std::string &o, DICTTYPE &so_dict, DICTTYPE &p_dict);
+    size_t getId() const;
     std::string getName() const;
     TYPEID getSubjectId() const;
     TYPEID getPredicateId() const;
@@ -21,10 +22,12 @@ class TriplePattern {
     bool objectIsVariable() const;
     bool hasVariable(std::string v) const;
     void print() const;
+    std::string toString() const;
 
     // For optimization
     size_t estimate_rows;
   private:
+    size_t id;
     std::string name;
     std::string subject, predicate, object;
     TYPEID subject_id, predicate_id, object_id;
