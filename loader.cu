@@ -1,3 +1,4 @@
+#include <cassert>
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -5,52 +6,47 @@
 #include <raptor2/raptor2.h>
 #include "vedas.h"
 
-
 using namespace std;
 
-void load_rdf(const char *f, vector<TYPEID> &s, vector<TYPEID> &p, vector<TYPEID> &o, DICTTYPE &so_map, DICTTYPE &p_map) {
-  string s_str, p_str, o_str, dummy;
-  TYPEID so_count = 1, p_count = 1;
-  ifstream infile;
-
-  infile.open(f, ifstream::in);
-
-  while (infile.good()) {
-    infile >> s_str >> p_str >> o_str >> dummy;
-
-    if (so_map.count(s_str) == 0) so_map[s_str] = so_count++;
-    if (so_map.count(o_str) == 0) so_map[o_str] = so_count++;
-    if (p_map.count(p_str) == 0) p_map[p_str] = p_count++;
-
-    s.push_back( so_map[s_str] );
-    p.push_back( p_map[p_str] );
-    o.push_back( so_map[o_str] );
-  }
-
-  infile.close();
-}
-
 // http://librdf.org/raptor/api/tutorial-parser-example.html
-static vector<TYPEID> *s_p; vector<TYPEID> *p_p; vector<TYPEID> *o_p;
-static DICTTYPE *so_map_p; DICTTYPE *p_map_p;
-static REVERSE_DICTTYPE *r_so_map_p; REVERSE_DICTTYPE *r_p_map_p;
-static TYPEID so_count = 1, p_count = 1;
+static vector<TYPEID> *s_p, *p_p, *o_p;
+static DICTTYPE *so_map_p, *p_map_p, *l_map_p;
+static REVERSE_DICTTYPE *r_so_map_p, *r_p_map_p, *r_l_map_p;
+static TYPEID so_count = 1, p_count = 1, l_count = 5E7;
 
 static void
-print_triple(void* user_data, raptor_statement* triple)
+triple_statement_handler(void* user_data, raptor_statement* triple)
 {
     std::string s_str(reinterpret_cast<char*>(raptor_term_to_string(triple->subject)));
     std::string p_str(reinterpret_cast<char*>(raptor_term_to_string(triple->predicate)));
     std::string o_str(reinterpret_cast<char*>(raptor_term_to_string(triple->object)));
 
+    assert(triple->subject->type != RAPTOR_TERM_TYPE_LITERAL);
+
     if (so_map_p->count(s_str) == 0) {
         (*so_map_p)[s_str] = so_count++;
         (*r_so_map_p)[so_count - 1] = s_str;
     }
-    if (so_map_p->count(o_str) == 0) {
-        (*so_map_p)[o_str] = so_count++;
-        (*r_so_map_p)[so_count - 1] = o_str;
+
+    bool enable_literal_dict = false;
+#define LITERAL_DICT
+#ifdef LITERAL_DICT
+    enable_literal_dict = true;
+#endif
+    if (triple->object->type == RAPTOR_TERM_TYPE_LITERAL && enable_literal_dict) {
+        if (l_map_p->count(o_str) == 0) {
+            (*l_map_p)[o_str] = l_count++;
+            (*r_l_map_p)[l_count - 1] = o_str;
+        }
+        o_p->push_back( (*l_map_p)[o_str] );
+    } else {
+        if (so_map_p->count(o_str) == 0) {
+            (*so_map_p)[o_str] = so_count++;
+            (*r_so_map_p)[so_count - 1] = o_str;
+        }
+        o_p->push_back( (*so_map_p)[o_str] );
     }
+
     if (p_map_p->count(p_str) == 0) {
         (*p_map_p)[p_str] = p_count++;
         (*r_p_map_p)[p_count - 1] = p_str;
@@ -58,18 +54,20 @@ print_triple(void* user_data, raptor_statement* triple)
 
     s_p->push_back( (*so_map_p)[s_str] );
     p_p->push_back( (*p_map_p)[p_str] );
-    o_p->push_back( (*so_map_p)[o_str] );
 }
 
-void load_rdf2(const char *f, vector<TYPEID> &s, vector<TYPEID> &p, vector<TYPEID> &o,
-               DICTTYPE &so_map, DICTTYPE &p_map, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map) {
+void load_rdf(const char *f, vector<TYPEID> &s, vector<TYPEID> &p, vector<TYPEID> &o,
+               DICTTYPE &so_map, DICTTYPE &p_map, DICTTYPE &l_map,
+               REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map, REVERSE_DICTTYPE &r_l_map) {
     s_p = &s;
     p_p = &p;
     o_p = &o;
     so_map_p = &so_map;
     p_map_p = &p_map;
+    l_map_p = &l_map;
     r_so_map_p = &r_so_map;
     r_p_map_p = &r_p_map;
+    r_l_map_p = &r_l_map;
 
     raptor_world *world = nullptr;
     raptor_parser *rdf_parser = nullptr;
@@ -79,7 +77,7 @@ void load_rdf2(const char *f, vector<TYPEID> &s, vector<TYPEID> &p, vector<TYPEI
     world = raptor_new_world();
     rdf_parser = raptor_new_parser(world, "ntriples");
 
-    raptor_parser_set_statement_handler(rdf_parser, nullptr, print_triple);
+    raptor_parser_set_statement_handler(rdf_parser, nullptr, triple_statement_handler);
 
     uri_string = raptor_uri_filename_to_uri_string(f);
     uri = raptor_new_uri(world, uri_string);

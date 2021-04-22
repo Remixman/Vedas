@@ -28,13 +28,12 @@ void SparqlResult::setResult(IR *ir) {
     } else {
         resultIR = dynamic_cast<FullRelationIR*>(ir);
     }
-    
-    // resultIR->removeDuplicate(); // TODO: remove if join var is not in select
-
-    //std::cout << "RAW Result : \n";
-    //resultIR->print();
 
     assert(resultIR != nullptr);
+}
+
+FullRelationIR *SparqlResult::getResultIR() {
+    return resultIR;
 }
 
 vector<string> SparqlResult::getHeaderVariables()

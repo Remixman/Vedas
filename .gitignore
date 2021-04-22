@@ -1,5 +1,6 @@
 vedas
 vdBuild
+vdBench
 vdClean
 vdQuery
 *.vdd
@@ -10,3 +11,4 @@ tools/*.txt
 tools/*.graphml
 .vscode
 PrivateVedas.*
+plan_*

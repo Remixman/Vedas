@@ -11,6 +11,7 @@ class SparqlResult
 public:
     SparqlResult();
     void setResult(IR *resultIR);
+    FullRelationIR *getResultIR();
     std::vector<std::string> getHeaderVariables();
     std::vector<std::vector<TYPEID>> get();
     std::vector<TYPEID> get(size_t i);

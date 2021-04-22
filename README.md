@@ -32,6 +32,10 @@ VEDAS support query only from file. The **vdQuery** is the query engine that loa
 ```
 The prompt will shown after finish loaded data. To submit the query, use command *sparql <path_to_sparql_query_file>* and *exit* to terminate the program.
 
+You can use *-sparql-path* option to speccify the sparql file path.
+```bash
+./vdQuery <database_name> -sparql-path=<path_to_sparql_query_file>
+```
 
 ## Visualize the RDF Graph
 After load the database with **vdBuild**, it will construct the graph vertex and edge files, named *tools/nodes.txt* and *edges/nodes.txt*. You can generate the GraphML file with the following command

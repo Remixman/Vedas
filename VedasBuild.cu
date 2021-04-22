@@ -13,11 +13,13 @@
 
 using namespace std;
 
-void save_dict(const char *fname, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map);
+void save_dict(const char *fname, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map, 
+                REVERSE_DICTTYPE &r_l_map);
 void shuffle_dict(vector<TYPEID> &s, vector<TYPEID> &p, vector<TYPEID> &o,
                   DICTTYPE &so_map, DICTTYPE &p_map, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map);
 void reassign_dict(vector<TYPEID> &s, vector<TYPEID> &p, vector<TYPEID> &o,
-                   DICTTYPE &so_map, DICTTYPE &p_map, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map);
+                   DICTTYPE &so_map, DICTTYPE &p_map, DICTTYPE &l_map,
+                   REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map, REVERSE_DICTTYPE &r_l_map);
 
 int main(int argc, char **argv) {
 
@@ -27,24 +29,33 @@ int main(int argc, char **argv) {
     }
 
     vector<TYPEID> subjects, predicates, objects;
-    DICTTYPE so_map, p_map;
-    REVERSE_DICTTYPE r_so_map, r_p_map;
+    DICTTYPE so_map;   // Subject and Object IRI map
+    DICTTYPE p_map;    // Predicate map
+    DICTTYPE l_map;    // Literal map
+    REVERSE_DICTTYPE r_so_map, r_p_map, r_l_map;  // Reverse map
 
     auto load_start = std::chrono::high_resolution_clock::now();
-    load_rdf2(argv[2], subjects, predicates, objects, so_map, p_map, r_so_map, r_p_map);
+    load_rdf(argv[2], subjects, predicates, objects,
+            so_map, p_map, l_map, r_so_map, r_p_map, r_l_map);
     auto load_end = std::chrono::high_resolution_clock::now();
+
+    std::cout << "Subject/object dict size : " << so_map.size() << "\n";
+    std::cout << "Predicate dict size : " << p_map.size() << "\n";
+    std::cout << "Literal dict size : " << l_map.size() << "\n";
 
     /*auto shuffle_start = std::chrono::high_resolution_clock::now();
     shuffle_dict(subjects, predicates, objects, so_map, p_map, r_so_map, r_p_map);
     auto end_start = std::chrono::high_resolution_clock::now();*/
 
     /* BFS */
-    reassign_dict(subjects, predicates, objects, so_map, p_map, r_so_map, r_p_map);
+    /*reassign_dict(subjects, predicates, objects,
+                  so_map, p_map, l_map,
+                  r_so_map, r_p_map, r_l_map);*/
 
     std::string dict_path = argv[1]; dict_path += ".vdd";
     std::string data_path = argv[1]; data_path += ".vds";
 
-    save_dict(dict_path.c_str(), r_so_map, r_p_map);
+    save_dict(dict_path.c_str(), r_so_map, r_p_map, r_l_map);
 
     auto copy_start = std::chrono::high_resolution_clock::now();
     RdfData rdfData(subjects, predicates, objects);
@@ -72,7 +83,7 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-void save_dict(const char *fname, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map) {
+void save_dict(const char *fname, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map, REVERSE_DICTTYPE &r_l_map) {
     std::ofstream out;
     out.open(fname, std::fstream::out);
 
@@ -81,6 +92,9 @@ void save_dict(const char *fname, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &
         out << it->first << " " << it->second << "\n";
     out << r_p_map.size() << "\n";
     for (auto it = r_p_map.begin(); it != r_p_map.end(); ++it)
+        out << it->first << " " << it->second << "\n";
+    out << r_l_map.size() << "\n";
+    for (auto it = r_l_map.begin(); it != r_l_map.end(); ++it)
         out << it->first << " " << it->second << "\n";
 
     out.close();
@@ -133,7 +147,8 @@ void shuffle_dict(vector<TYPEID> &s, vector<TYPEID> &p, vector<TYPEID> &o,
 }
 
 void reassign_dict(vector<TYPEID> &s, vector<TYPEID> &p, vector<TYPEID> &o,
-                   DICTTYPE &so_map, DICTTYPE &p_map, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map) {
+                   DICTTYPE &so_map, DICTTYPE &p_map, DICTTYPE &l_map,
+                   REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map, REVERSE_DICTTYPE &r_l_map) {
     size_t triple_size = s.size();
     std::unordered_map<TYPEID, TYPEID> new_map;
 

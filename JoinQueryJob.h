@@ -31,14 +31,17 @@ public:
     IR* join(IndexIR *lir, IndexIR *rir);
     IR* multiJoinIndexedIr(std::vector<IndexIR*> &irs);
     void print() const override;
+    void setQueryVarCounter(std::map<std::string, size_t> *query_variable_counter);
     unsigned getLeftIRSize() const;
     unsigned getRightIRSize() const;
+    std::string getJoinVariable() const;
 private:
     std::string joinVariable;
     mgpu::standard_context_t* context;
     QueryJob *leftJob { nullptr };
     QueryJob *rightJob { nullptr };
 
+    std::map<std::string, size_t> *query_variable_counter;
     std::map< std::string, std::pair<TYPEID, TYPEID> > *variables_bound{ nullptr };
 };
 

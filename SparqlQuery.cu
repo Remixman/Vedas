@@ -1,3 +1,4 @@
+#include <iostream>
 #include <raptor2/raptor2.h>
 #include <rasqal/rasqal.h>
 #include "vedas.h"

@@ -18,6 +18,12 @@ JoinGraph::JoinGraph(SparqlQuery *sparqlQuery) {
         if (tp->predicateIsVariable()) addNewNode(tp->getPredicate(), tpn);
         if (tp->objectIsVariable()) addNewNode(tp->getObject(), tpn);
     }
+
+    variables = sparqlQuery->getVariables();
+    for (unsigned i = 0; i < variables.size(); i++) {
+        unsigned long long ull = 1;
+        varBitDict[variables[i]] = (ull << i);
+    }
 }
 
 void JoinGraph::createLinkToVarNode(GraphNode *fromGn, const std::string &variable) {
@@ -78,15 +84,78 @@ ExecutionPlanTree* JoinGraph::createPlan() {
     ExecutionPlanTree *tree = new ExecutionPlanTree();
 
     // TODO: remove variable node with 1 degree
-
-    while (true) {
+    
+    /*while (true) {
         size_t maxDegIdx = maxDegreeVarNodeIndex();
         std::string variable = nodeVarDict[maxDegIdx];
         int degree = static_cast<int>(adjList[maxDegIdx].size());
 
         if (degree <= 1) break;
 
-        // std::cout << "VAR : " << variable << " WITH DEGREE " << degree << "\n";
+        std::cout << "maxDegIdx : " << maxDegIdx << "\n";
+        std::cout << "VAR : " << variable << " WITH DEGREE " << degree << "\n";
+
+        GraphNode *n1, *n2;
+        std::list<GraphNode*> &nodeList = adjList[maxDegIdx];
+
+        assert(degree >= 2);
+
+        // Random pick variable nodes
+        auto firstIt = nodeList.begin();
+        std::advance(firstIt, rand() % degree);
+        n1 = *firstIt;
+        nodeList.erase(firstIt);
+        auto secondIt = nodeList.begin();
+        std::advance(secondIt, rand() % (degree - 1));
+        n2 = *secondIt;
+        nodeList.erase(secondIt);
+
+        TriplePatternNode* tpn1 = dynamic_cast<TriplePatternNode *>(n1);
+        IrNode* irn1 = dynamic_cast<IrNode *>(n1);
+        TriplePatternNode* tpn2 = dynamic_cast<TriplePatternNode *>(n2);
+        IrNode* irn2 = dynamic_cast<IrNode *>(n2);
+        size_t opNum1, opNum2;
+        if (tpn1 != nullptr) {
+            auto index = getUsedIndex(tpn1->getTriplePattern(), variable);
+            opNum1 = tree->addUploadOperation(index, tpn1->getTriplePattern());
+        } else if (irn1 != nullptr) {
+            opNum1 = irn1->operatorId;
+        }
+
+        if (tpn2 != nullptr) {
+            auto index = getUsedIndex(tpn2->getTriplePattern(), variable);
+            opNum2 = tree->addUploadOperation(index, tpn2->getTriplePattern());
+        } else if (irn2 != nullptr) {
+            opNum2 = irn2->operatorId;
+        }
+
+        // std::cout << "JOIN " << opNum1 << ":" << opNum2 << "\n";
+        size_t newOpNum = tree->addJoinOperation(opNum1, opNum2, variable);
+        IrNode *newIrNode = new IrNode(newOpNum, opNum1, opNum2);
+        // std::cout << "  GET " << newOpNum << "\n";
+
+        replaceNode(n1, newIrNode);
+        replaceNode(n2, newIrNode);
+    }*/
+    
+    int lastIdx = -1;
+    while (true) {
+        size_t maxDegIdx = (lastIdx < 0)? maxDegreeVarNodeIndex() : lastIdx;
+        std::string variable = nodeVarDict[maxDegIdx];
+        int degree = static_cast<int>(adjList[maxDegIdx].size());
+
+        if (adjList.size() <= 1) break;
+        
+        if (degree <= 1) {
+            if (lastIdx < 0) {
+                break;
+            } else {
+                lastIdx = -1;
+                continue;
+            }
+        }
+
+        lastIdx = maxDegIdx;
 
         GraphNode *n1, *n2;
         std::list<GraphNode*> &nodeList = adjList[maxDegIdx];
@@ -130,7 +199,33 @@ ExecutionPlanTree* JoinGraph::createPlan() {
         replaceNode(n1, newIrNode);
         replaceNode(n2, newIrNode);
     }
+    
     return tree;
+}
+
+ExecutionPlanTree* JoinGraph::createPlanDP() {
+
+}
+
+void JoinGraph::searchBinaryPlanDP() {
+    std::vector<bool> varMask(variables.size(), false);
+    /*for (unsigned i = 0; i < variables.size(); i++) {
+
+    }*/
+    searchBinaryPlanDPRecursive(varMask);
+}
+
+void JoinGraph::searchBinaryPlanDPRecursive(std::vector<bool> &varMask) {
+
+    if (std::all_of(varMask.begin(), varMask.end(), [](bool b){ return b; })) {
+        // Complete plan tree
+
+        return;
+    }
+
+    for (unsigned i = 0; i < variables.size(); i++) {
+
+    }
 }
 
 #define SUBJECT_BIT    4

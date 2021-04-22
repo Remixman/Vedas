@@ -23,7 +23,6 @@ public:
                    bool *is_predicates, mgpu::standard_context_t* context);
     ~SelectQueryJob() override;
     void startJob() override;
-    void startJobCpu();
     IR* getIR() override;
     TYPEID_HOST_VEC *getL1IndexValues() const;
     TYPEID_HOST_VEC *getL1IndexOffsets() const;

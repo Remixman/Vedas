@@ -1,6 +1,6 @@
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
-SMS ?= 30
+SMS ?= 60
 # SMS ?= 30 35 37 50 52 60 61 70 75
 
 ifeq ($(SMS),)
@@ -10,25 +10,37 @@ endif
 
 # Generate PTX code from the highest SM architecture in $(SMS) to guarantee forward-compatibility
 HIGHEST_SM := $(lastword $(sort $(SMS)))
+NT := 128
+VT := 11
+SORTEDSEARCH_VT := 15
 
-DEBUG_LEVEL = -g
-EXTRA_CONFIGS = -DVERBOSE_DEBUG -DTIME_DEBUG -DAUTO_PLANNER -DUPDATE_BOUND_AFTER_JOIN
+DEBUG_LEVEL = #-g -G
+EXTRA_CONFIGS = -DUPDATE_BOUND_AFTER_JOIN #-DLITERAL_DICT #-DAUTO_PLANNER -DVERBOSE_DEBUG -DTIME_DEBUG 
 MGPU_FLAGS = ${DEBUG_LEVEL} $(EXTRA_CONFIGS) \
+						-DNT=$(NT) -DVT=$(VT) -DSORTEDSEARCH_VT=$(SORTEDSEARCH_VT) \
 						-std=c++11 \
 						-gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM) \
-						-I ../moderngpu/src --expt-extended-lambda -Wno-deprecated-declarations \
+						-I ./ --expt-extended-lambda -Wno-deprecated-declarations \
 						-lraptor2 -lrasqal
 CUDPP_FLAGS = -L /home/remixman/cudpp/build/lib -lcudpp -lcudpp_hash
 # OMP_ENABLE_FLAG = -Xcompiler " -fopenmp"
 
-all: vdQuery vdBuild vdClean
+all: vdQuery vdBuild vdBench vdClean
 	echo ${GREEN}===================== SUCCESS =====================${NC}
+
+modernGpuConfig:
+	cp moderngpu-edits/kernel_load_balance.hxx moderngpu/kernel_load_balance.hxx
+	cp moderngpu-edits/kernel_scan.hxx moderngpu/kernel_scan.hxx
+	cp moderngpu-edits/kernel_sortedsearch.hxx moderngpu/kernel_sortedsearch.hxx
 
 testPartition: TestPartition.cpp
 	g++ -std=c++11 TestPartition.cpp -o testPartition -lmetis
 
 vdBuild: FullRelationIR.o RdfData.o InputParser.o VedasStorage.o ExecutionWorker.o LinkedData.o VedasBuild.cu
-	nvcc $(MGPU_FLAGS) $(OMP_ENABLE_FLAG) *.o loader.cu -o vdBuild VedasBuild.cu 
+	nvcc $(MGPU_FLAGS) $(OMP_ENABLE_FLAG) *.o loader.cu -o vdBuild VedasBuild.cu
+
+vdBench: TriplePattern.o QueryExecutor.o VedasStorage.o QueryIndex.o QueryPlan.o RdfData.o IndexIR.o FullRelationIR.o SwapIndexJob.o SelectQueryJob.o JoinQueryJob.o InputParser.o IR.o ExecutionPlanTree.o ExecutionWorker.o VariableNode.o IrNode.o TriplePatternNode.o VedasBench.cu loader.cu
+	nvcc $(MGPU_FLAGS) $(OMP_ENABLE_FLAG) *.o loader.cu -o vdBench VedasBench.cu
 
 vdQuery: TriplePattern.o QueryExecutor.o VedasStorage.o QueryIndex.o QueryPlan.o RdfData.o IndexIR.o FullRelationIR.o SwapIndexJob.o SelectQueryJob.o JoinQueryJob.o InputParser.o IR.o ExecutionPlanTree.o ExecutionWorker.o VariableNode.o IrNode.o TriplePatternNode.o VedasQuery.cu loader.cu
 	nvcc $(MGPU_FLAGS) $(OMP_ENABLE_FLAG) *.o loader.cu VedasQuery.cu -o vdQuery
@@ -112,4 +124,4 @@ TriplePatternNode.o: JoinGraph/TriplePatternNode.cu JoinGraph/TriplePatternNode.
 	nvcc $(MGPU_FLAGS) -c -o TriplePatternNode.o JoinGraph/TriplePatternNode.cu
 
 clean:
-	rm -rf join vdBuild vdQuery vdClean *.o
+	rm -rf join vdBuild vdQuery vdClean vdBench *.o

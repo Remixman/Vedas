@@ -12,6 +12,7 @@
 #include <moderngpu/context.hxx>
 #include <raptor2/raptor2.h>
 #include <rasqal/rasqal.h>
+#include <cuda_profiler_api.h>
 #include "ctpl_stl.h"
 #include "vedas.h"
 #include "InputParser.h"
@@ -24,7 +25,9 @@
 using namespace mgpu;
 using namespace std;
 
-void load_dict(const char *fname, DICTTYPE &so_map, DICTTYPE &p_map, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map);
+void load_dict(const char *fname, DICTTYPE &so_map, DICTTYPE &p_map, DICTTYPE &l_map, 
+               REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map, REVERSE_DICTTYPE &r_l_map);
+void print_exec_log(std::vector<ExecuteLogRecord> &records);
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -35,9 +38,18 @@ int main(int argc, char **argv) {
     InputParser input_parser(argc, argv);
     bool preload = input_parser.cmdOptionExists("-preload");
     bool parallel_sche = input_parser.cmdOptionExists("-psche");
+    std::string sparql_path = input_parser.getCmdOption("-sparql-path");
+    if (sparql_path != "") {
+        std::cout << "SPARQL PATH : " << sparql_path << "\n";
+    }
 
-    bool device1 = input_parser.cmdOptionExists("-d1");
-    if (device1) cudaSetDevice(1);
+    std::string device_num = input_parser.getCmdOption("-d");
+    if (device_num != "") {
+        int max_device;
+        cudaGetDeviceCount(&max_device);
+        int device_id = std::stoi(device_num);
+        if (device_id < max_device) cudaSetDevice(device_id);
+    }
 
     int device;
     cudaGetDevice(&device);
@@ -52,27 +64,20 @@ int main(int argc, char **argv) {
     int poolSize = 2; // TODO: set thread pool size fron argument
     ctpl::thread_pool threadPool(poolSize);
     
-#if 0
-    if (input.cmdOptionExists("-h")) { }
-    std::string &storage_type = input.getCmdOption("-storage");
-    if (storage_type.empty()) {
-        storage_type = "cpu";
-    }
-#endif
-    
     standard_context_t context;
     vector<TYPEID> subjects, predicates, objects;
-    DICTTYPE so_map, p_map;
-    REVERSE_DICTTYPE r_so_map, r_p_map;
+    DICTTYPE so_map, p_map, l_map;
+    REVERSE_DICTTYPE r_so_map, r_p_map, r_l_map;
 
     std::string dict_path = argv[1]; dict_path += ".vdd";
     std::string data_path = argv[1]; data_path += ".vds";
     // load_dummy_rdf(subjects, predicates, objects, so_map, p_map, r_so_map, r_p_map);
 
     auto load_start = std::chrono::high_resolution_clock::now();
-    load_dict(dict_path.c_str(), so_map, p_map, r_so_map, r_p_map);
+    load_dict(dict_path.c_str(), so_map, p_map, l_map, r_so_map, r_p_map, r_l_map);
     QueryExecutor::r_p_map = &r_p_map;
     QueryExecutor::r_so_map = &r_so_map;
+    QueryExecutor::r_l_map = &r_l_map;
     auto load_end = std::chrono::high_resolution_clock::now();
 
     auto indexing_start = std::chrono::high_resolution_clock::now();
@@ -90,12 +95,17 @@ int main(int argc, char **argv) {
 
     std::string cmd_line, op, arg, sparql_query;
     while (true) {
-        cout << "vedas> "; getline(cin, cmd_line);
-        // cmd_line = "sparql /work/rm/query/S1.txt";
-        stringstream cmd_ss(cmd_line);
-        cmd_ss >> op;
-        arg = (cmd_line.size() > op.size())? cmd_line.substr(op.size() + 1) : "";
 
+        if (sparql_path != "") {
+            op = "sparql";
+            arg = sparql_path;
+        } else {
+            cout << "vedas> "; getline(cin, cmd_line);
+            stringstream cmd_ss(cmd_line);
+            cmd_ss >> op;
+            arg = (cmd_line.size() > op.size())? cmd_line.substr(op.size() + 1) : "";
+        }
+        
         int plan_id = 0;
         if (op == "sparql") {
             // Load files
@@ -122,6 +132,7 @@ int main(int argc, char **argv) {
             else if (arg.find("L3.txt") != std::string::npos) { plan_id = 10; }
             else if (arg.find("L4.txt") != std::string::npos) { plan_id = 11; }
             else if (arg.find("L5.txt") != std::string::npos) { plan_id = 12; }
+            else if (arg.find("LINEAR1.txt") != std::string::npos) { plan_id = 99; }
             // DBpedia
             else if (arg.find("q1.txt") != std::string::npos) { plan_id = 21; }
             else if (arg.find("q2.txt") != std::string::npos) { plan_id = 22; }
@@ -146,15 +157,10 @@ int main(int argc, char **argv) {
         cout << sparql_query << "\n";
         SparqlQuery query(sparql_query.c_str(), so_map, p_map);
         query.print();
-
+        
         auto query_start = std::chrono::high_resolution_clock::now();
         SparqlResult result;
-        QueryExecutor::upload_ms = 0.0;
-        QueryExecutor::join_ns = 0.0;
-        QueryExecutor::alloc_copy_ns = 0.0;
-        QueryExecutor::swap_index_ns = 0.0;
-        QueryExecutor::download_ns = 0.0;
-        QueryExecutor::eliminate_duplicate_ns = 0.0;
+        QueryExecutor::initTime();
         QueryExecutor executor(vedasStorage, &threadPool, parallel_sche, &context, plan_id);
         executor.query(query, result);
         auto query_end = std::chrono::high_resolution_clock::now();
@@ -174,13 +180,17 @@ int main(int argc, char **argv) {
              << std::setprecision(9) << QueryExecutor::alloc_copy_ns << " ns.)\n";
         cout << "Total eliminate duplicate time : " << std::setprecision(3) << QueryExecutor::eliminate_duplicate_ns / 1e6 << " ms. ("
              << std::setprecision(9) << QueryExecutor::eliminate_duplicate_ns << " ns.)\n";
+        print_exec_log(QueryExecutor::exe_log);
         // break;
+
+        if (sparql_path != "") break;
     }
 
     return 0;
 }
 
-void load_dict(const char *fname, DICTTYPE &so_map, DICTTYPE &p_map, REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map) {
+void load_dict(const char *fname, DICTTYPE &so_map, DICTTYPE &p_map, DICTTYPE &l_map,
+                REVERSE_DICTTYPE &r_so_map, REVERSE_DICTTYPE &r_p_map, REVERSE_DICTTYPE &r_l_map) {
     std::ifstream in;
     in.open(fname, std::fstream::in);
 
@@ -212,5 +222,44 @@ void load_dict(const char *fname, DICTTYPE &so_map, DICTTYPE &p_map, REVERSE_DIC
         r_p_map[id] = resource;
     }
 
+    if (std::getline(in, tmp)) {
+        s = std::stoul(tmp);
+        l_map.reserve(s);
+        r_l_map.reserve(s);
+        for (size_t i = 0; i < s; ++i) {
+            std::getline(in, tmp);
+            size_t first_space = tmp.find(" ");
+            TYPEID id = static_cast<TYPEID>(std::stoul(tmp.substr(0, first_space)));
+            string resource = tmp.substr(first_space + 1);
+            l_map[resource] = id;
+            r_l_map[id] = resource;
+        }
+    }
+
     in.close();
+}
+
+void print_exec_log(std::vector<ExecuteLogRecord> &records) {
+    size_t total_upload = 0, total_join = 0, total_swap = 0;
+    for (auto r : records) {
+        switch (r.op) {
+            case JOIN_OP:
+                std::cout << "JOIN   [" << r.param1 << " x " << r.param2 << " : " << r.param3 << "] (" << r.paramstr << ")\n";
+                total_join += r.param3;
+                break;
+            case UPLOAD_OP:
+                std::cout << "UPLOAD [" << r.param1 << " x " << r.param2 << "] (" << r.paramstr << ")\n";
+                total_upload += r.param1;
+                break;
+            case SWAP_OP:
+                std::cout << "SWAP   [" << r.param1 << " x " << r.param2 << "] (" << r.paramstr << ")\n";
+                total_swap += r.param1;
+                break;
+        }
+    }
+    std::cout << "*******************************\n";
+    std::cout << "TOTAL JOIN       : " << total_join << "\n";
+    std::cout << "TOTAL UPLOAD     : " << total_upload << "\n";
+    std::cout << "TOTAL INDEX SWAP : " << total_swap << "\n";
+    std::cout << "*******************************\n";
 }

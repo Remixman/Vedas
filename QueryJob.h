@@ -12,7 +12,7 @@ public:
     virtual IR* getIR() = 0;
     virtual void startJob() = 0;
     virtual void print() const = 0;
-    ExecPlanTreeNode *planTreeNode;
+    ExecPlanTreeNode *planTreeNode = nullptr;
 protected:
     IR* intermediateResult { nullptr };
 };

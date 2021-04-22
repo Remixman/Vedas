@@ -6,12 +6,16 @@
 #include <tuple>
 #include <chrono>
 #include <cassert>
+#include <climits>
 #include "QueryPlan.h"
 #include "SelectQueryJob.h"
 #include "JoinQueryJob.h"
 
-QueryPlan::QueryPlan(ctpl::thread_pool *threadPool) {
+QueryPlan::QueryPlan(ctpl::thread_pool *threadPool, std::set<std::string> &select_variable_set) {
     this->threadPool = threadPool;
+    for (std::string var: select_variable_set) {
+        this->select_variables.push_back(var);
+    }
 }
 
 QueryPlan::~QueryPlan() {
@@ -21,6 +25,12 @@ QueryPlan::~QueryPlan() {
 
 void QueryPlan::pushJob(QueryJob *job) {
     this->job_queue.push_back(job);
+
+    JoinQueryJob *joinJob = dynamic_cast<JoinQueryJob*>(job);
+    if (joinJob != nullptr) {
+        size_t varCount = this->query_variable_counter[joinJob->getJoinVariable()] + 1;
+        this->query_variable_counter[joinJob->getJoinVariable()] = varCount;
+    }
 }
 
 QueryJob* QueryPlan::getJob(size_t i) {
@@ -40,10 +50,6 @@ void QueryPlan::setJoinVariables(std::vector<std::string> variables) {
     this->join_variables = variables;
 }
 
-void QueryPlan::setSelectVariables(std::vector<std::string> variables) {
-    this->select_variables = variables;
-}
-
 size_t QueryPlan::size() const {
     return this->job_queue.size();
 }
@@ -53,6 +59,10 @@ size_t QueryPlan::parallelSize() const {
 }
 
 void QueryPlan::execute(SparqlResult &sparqlResult, bool parallel_plan) {
+
+    for (std::string selVar : select_variables) {
+        this->query_variable_counter[selVar] = ULONG_MAX;
+    }
 
     int threadSize = threadPool->size();
     
@@ -81,12 +91,17 @@ void QueryPlan::execute(SparqlResult &sparqlResult, bool parallel_plan) {
     } else {
         int i = 0;
         for (auto* job : job_queue) {
+
+            JoinQueryJob *joinJob = dynamic_cast<JoinQueryJob*>(job);
+            if (joinJob != nullptr) {
+                joinJob->setQueryVarCounter(&(this->query_variable_counter));
+            }
+
             auto start = std::chrono::high_resolution_clock::now();
             job->startJob();
             auto finish = std::chrono::high_resolution_clock::now();
 
             // Loging join size
-            JoinQueryJob *joinJob = dynamic_cast<JoinQueryJob*>(job);
             if (joinJob != nullptr) {
                 std::tuple<unsigned, unsigned, unsigned> join_size;
                 std::get<0>(join_size) = joinJob->getLeftIRSize();
@@ -99,7 +114,24 @@ void QueryPlan::execute(SparqlResult &sparqlResult, bool parallel_plan) {
 #endif
         }
 
-        sparqlResult.setResult((*job_queue.rbegin())->getIR());
+        // Remove not select variable and duplicate rows
+        FullRelationIR *irResult = dynamic_cast<FullRelationIR*>((*job_queue.rbegin())->getIR());
+        bool hasRemove = false; // XXX: Use for sort condition
+        for (int i = irResult->getColumnNum() - 1; i >= 1; --i) {
+            if (this->query_variable_counter[irResult->getHeader(i)] == 0) {
+                irResult->removeColumn(i); hasRemove = true;
+            }
+        }
+        // Sort columns
+        /*for (size_t i = 0; i < select_variables.size(); i++) {
+            size_t ci = irResult->getColumnId(select_variables[i]);
+            if (ci != i) {
+                irResult->swapColumn(ci, i);
+            }
+        }*/
+        irResult->removeDuplicate();
+
+        sparqlResult.setResult(irResult);
     }
 }
 

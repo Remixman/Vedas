@@ -30,13 +30,15 @@ public:
                                                           TYPEID l1_offst_lower_bound, TYPEID l1_offst_upper_bound, TYPEID id2, size_t n);
     static std::pair<size_t, size_t> findDataOffsetFromL2(TYPEID_HOST_VEC *l2_data, TYPEID l1_offst_lower_bound, TYPEID l1_offst_upper_bound,
                                                           TYPEID id2, size_t n);
-    static REVERSE_DICTTYPE *r_so_map, *r_p_map;
+    static REVERSE_DICTTYPE *r_so_map, *r_p_map, *r_l_map;
+    static void initTime();
     static double upload_ms;
     static double download_ns;
     static double join_ns;
     static double alloc_copy_ns;
     static double swap_index_ns;
     static double eliminate_duplicate_ns;
+    static std::vector<ExecuteLogRecord> exe_log;
 private:
     VedasStorage* vedasStorage;
     ctpl::thread_pool *threadPool;

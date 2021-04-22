@@ -16,12 +16,14 @@
 
 REVERSE_DICTTYPE *QueryExecutor::r_so_map;
 REVERSE_DICTTYPE *QueryExecutor::r_p_map;
+REVERSE_DICTTYPE *QueryExecutor::r_l_map;
 double QueryExecutor::upload_ms;
 double QueryExecutor::join_ns;
 double QueryExecutor::alloc_copy_ns;
 double QueryExecutor::download_ns;
 double QueryExecutor::swap_index_ns;
 double QueryExecutor::eliminate_duplicate_ns;
+std::vector<ExecuteLogRecord> QueryExecutor::exe_log;
 
 QueryExecutor::QueryExecutor(VedasStorage *vedasStorage, ctpl::thread_pool *threadPool, bool parallel_plan, mgpu::standard_context_t* context, int plan_id) {
     this->vedasStorage = vedasStorage;
@@ -32,7 +34,10 @@ QueryExecutor::QueryExecutor(VedasStorage *vedasStorage, ctpl::thread_pool *thre
 }
 
 void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) {
-    QueryPlan plan(threadPool);
+    // Copy selected variables for filter
+    selected_variables = sparqlQuery.getSelectedVariables();
+
+    QueryPlan plan(threadPool, selected_variables);
 
     auto planing_start = std::chrono::high_resolution_clock::now();
 
@@ -45,21 +50,20 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
         return;
     }
 
-    // Copy selected variables for filter
-    selected_variables = sparqlQuery.getSelectedVariables();
-
     createVariableBound(sparqlQuery);
+#ifdef VERBOSE_DEBUG
     printBounds();
+#endif
     estimateRelationSize();
 
 #ifdef AUTO_PLANNER
     JoinGraph joinGraph(&sparqlQuery); // Construct the join graph
     ExecutionPlanTree *planTree = joinGraph.createPlan();
-    std::cout << "====================================================\n";
-    std::cout << "|               Execution Plan Tree                |\n";
-    std::cout << "====================================================\n";
-    planTree->printSequentialOrder();
-    std::cout << "====================================================\n";
+    //std::cout << "====================================================\n";
+    //std::cout << "|               Execution Plan Tree                |\n";
+    //std::cout << "====================================================\n";
+    //planTree->printSequentialOrder();
+    //std::cout << "====================================================\n";
     for (auto node : planTree->getNodeList()) {
         if (node->planOp == UPLOAD) {
             SelectQueryJob *job = this->createSelectQueryJob(node->tp, node->index);
@@ -84,10 +88,12 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
 
     // plan.print();
     plan.execute(sparqlResult, parallel_plan);
+#ifdef AUTO_PLANNER
     auto unixtime = std::chrono::system_clock::now();
     std::stringstream ss;
     ss << "plan_" << std::chrono::duration_cast<std::chrono::seconds>(unixtime.time_since_epoch()).count() << ".gv";
     planTree->writeGraphvizTreeFile(ss.str());
+#endif
 }
 
 void QueryExecutor::printBounds() const {
@@ -526,6 +532,16 @@ SelectQueryJob* QueryExecutor::create3VarSelectQueryJob(TriplePattern *pattern) 
     return nullptr;
 }
 
+void QueryExecutor::initTime() {
+    QueryExecutor::upload_ms = 0.0;
+    QueryExecutor::join_ns = 0.0;
+    QueryExecutor::alloc_copy_ns = 0.0;
+    QueryExecutor::swap_index_ns = 0.0;
+    QueryExecutor::download_ns = 0.0;
+    QueryExecutor::eliminate_duplicate_ns = 0.0;
+    QueryExecutor::exe_log.clear();
+}
+
 
 
 void QueryExecutor::manualSchedule(QueryPlan &plan, SparqlQuery &sparqlQuery) {
@@ -550,7 +566,7 @@ void QueryExecutor::manualSchedule(QueryPlan &plan, SparqlQuery &sparqlQuery) {
             plan.pushJob(new JoinQueryJob(plan.getJob(14), plan.getJob(15), "?v0", context, &variables_bound));
             break;
         case 2: // S2
-            if (parallel_plan) {
+            /*if (parallel_plan) {
                 std::vector<QueryJob*> firstLevelJobs;
                 for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i)
                     firstLevelJobs.push_back(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
@@ -562,45 +578,56 @@ void QueryExecutor::manualSchedule(QueryPlan &plan, SparqlQuery &sparqlQuery) {
                 plan.pushParallelJobs(firstLevelJobs);
                 plan.pushParallelJobs(secondLevelJobs);
                 plan.pushParallelJobs(thirdLevelJobs);
-            } else {
-                for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
-                plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(2), "?v0", context, &variables_bound));
-                plan.pushJob(new JoinQueryJob(plan.getJob(1), plan.getJob(3), "?v0", context, &variables_bound));
-                plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
-            }
+            } else {*/
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
+            /*}*/
             break;
         case 3: // S3
-            for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
-            plan.pushJob(new JoinQueryJob(plan.getJob(1), plan.getJob(2), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(3), plan.getJob(4), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(5), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
             break;
         case 4: // S4
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2), "POS"));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
             plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2), "POS"));
             plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
             plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
             break;
         case 5: // S5
-            for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
-            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(3), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(1), plan.getJob(2), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
             plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
             break;
         case 6: // S6
-            for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
-            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(2), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(1), plan.getJob(3), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
             break;
         case 7: // S7
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2), "POS"));
-            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(2), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(1), plan.getJob(3), "?v0", context, &variables_bound));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
             break;
         case 8: // L1
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0))); // 0
@@ -610,9 +637,11 @@ void QueryExecutor::manualSchedule(QueryPlan &plan, SparqlQuery &sparqlQuery) {
             plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v2", context, &variables_bound));
             break;
         case 9: // L2
-            for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
-            plan.pushJob(new JoinQueryJob(plan.getJob(1), plan.getJob(2), "?v2", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(3), "?v1", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v1", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v2", context, &variables_bound));
             break;
         case 10: // L3
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
@@ -620,47 +649,53 @@ void QueryExecutor::manualSchedule(QueryPlan &plan, SparqlQuery &sparqlQuery) {
             plan.pushJob(new JoinQueryJob(plan.getJob(1), plan.getJob(0), "?v0", context, &variables_bound));
             break;
         case 11: // L4
-            for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
             plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
             break;
         case 12: // L5
-            for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
-            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(2), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(1), plan.getJob(3), "?v3", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v3", context, &variables_bound));
             break;
         case 13: // C1
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
-            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound)); // 4
-            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound)); // 5
-            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound)); // 6
+            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4))); // 7
+            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v4", context, &variables_bound)); // 9
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5))); // 8
-            plan.pushJob(new JoinQueryJob(plan.getJob(7), plan.getJob(8), "?v4", context, &variables_bound)); // 9
-            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(9), "?v4", context, &variables_bound)); // 10
+            plan.pushJob(new JoinQueryJob(plan.getJob(8), plan.getJob(9), "?v4", context, &variables_bound)); // 10
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(6))); // 11
+            plan.pushJob(new JoinQueryJob(plan.getJob(10), plan.getJob(11), "?v6", context, &variables_bound)); // 13
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(7))); // 12
-            plan.pushJob(new JoinQueryJob(plan.getJob(11), plan.getJob(12), "?v7", context, &variables_bound)); // 13
-            plan.pushJob(new JoinQueryJob(plan.getJob(10), plan.getJob(13), "?v6", context, &variables_bound)); // 14
+            plan.pushJob(new JoinQueryJob(plan.getJob(12), plan.getJob(13), "?v7", context, &variables_bound)); // 14
             break;
         case 14: // C2
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1), "POS")); // 0
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2))); // 1
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3))); // 2
             plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v2", context, &variables_bound)); // 3
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3))); // 2
             plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v2", context, &variables_bound)); // 4
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0))); // 5
             plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound)); // 6
+
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4))); // 7
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5))); // 8
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(6))); // 9
             plan.pushJob(new JoinQueryJob(plan.getJob(7), plan.getJob(8), "?v4", context, &variables_bound)); // 10
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(6))); // 9
             plan.pushJob(new JoinQueryJob(plan.getJob(9), plan.getJob(10), "?v4", context, &variables_bound)); // 11
+
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(8), "POS")); // 12
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(9))); // 13
             plan.pushJob(new JoinQueryJob(plan.getJob(12), plan.getJob(13), "?v8", context, &variables_bound)); // 14
+            
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(7))); // 15
             plan.pushJob(new JoinQueryJob(plan.getJob(11), plan.getJob(15), "?v7", context, &variables_bound)); // 16
             plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(14), "?v3", context, &variables_bound)); // 17
@@ -669,18 +704,23 @@ void QueryExecutor::manualSchedule(QueryPlan &plan, SparqlQuery &sparqlQuery) {
         case 15: // C3
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(8), plan.getJob(9), "?v0", context, &variables_bound));
+            break;
+        case 16: // F1
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5)));
-            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(8), plan.getJob(9), "?v0", context, &variables_bound));
-            break;
-        case 16: // F1
-            for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
             plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
             plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v3", context, &variables_bound));
             plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v3", context, &variables_bound));
@@ -688,7 +728,14 @@ void QueryExecutor::manualSchedule(QueryPlan &plan, SparqlQuery &sparqlQuery) {
             plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(9), "?v0", context, &variables_bound));
             break;
         case 17: // F2
-            for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(i)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(6)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(7)));
             plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
             plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
             plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(7), "?v0", context, &variables_bound));
@@ -700,48 +747,176 @@ void QueryExecutor::manualSchedule(QueryPlan &plan, SparqlQuery &sparqlQuery) {
         case 18: // F3
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3), "POS"));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5), "POS"));
             plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(5), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(3), plan.getJob(4), "?v5", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5), "POS"));
+            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3), "POS"));
+            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v5", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
             plan.pushJob(new JoinQueryJob(plan.getJob(8), plan.getJob(9), "?v5", context, &variables_bound));
             break;
         case 19: // F4
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1), "POS"));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(6)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(7)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(8), "POS"));
             plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
             plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(8), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(9), plan.getJob(10), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(11), plan.getJob(12), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v1", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(5), plan.getJob(14), "?v1", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(13), plan.getJob(15), "?v1", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(8), "POS"));
+            plan.pushJob(new JoinQueryJob(plan.getJob(8), plan.getJob(9), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(10), plan.getJob(11), "?v1", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(6)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(12), plan.getJob(13), "?v1", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(7)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(14), plan.getJob(15), "?v1", context, &variables_bound));
             break;
         case 20: // F5
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
             plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1), "POS"));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
-            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5)));
             plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
             plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v0", context, &variables_bound));
-            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v1", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v0", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v1", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(5)));
             plan.pushJob(new JoinQueryJob(plan.getJob(8), plan.getJob(9), "?v1", context, &variables_bound));
             break;
+
+        case 99: // LINEAR1
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            // plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v2", context, &variables_bound));
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            // plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v3", context, &variables_bound));
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
+            // plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v4", context, &variables_bound));
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
+            // plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v5", context, &variables_bound));
+            // Total : 120000 rows
+            // UPLOAD [149998 x 2] (?v1?v2)
+            // UPLOAD [150000 x 2] (?v2?v3)
+            // SWAP   [149998 x 2] ()
+            // JOIN   [149998 x 150000 : 149998] (?v2?v1 x ?v2?v3)
+            // UPLOAD [3975 x 2] (?v3?v4)
+            // SWAP   [149998 x 3] ()
+            // JOIN   [3975 x 149998 : 24004] (?v3?v4 x ?v3?v1?v2)
+            // UPLOAD [3287633 x 2] (?v4?v5)
+            // SWAP   [24004 x 4] ()
+            // JOIN   [24004 x 3287633 : 877271] (?v4?v3?v1?v2 x ?v4?v5)
+            // UPLOAD [112394 x 2] (?v5?v6)
+            // SWAP   [877271 x 5] ()
+            // JOIN   [112394 x 877271 : 1067076] (?v5?v6 x ?v5?v3?v1?v2?v4)
+            // *******************************
+            // TOTAL JOIN       : 2118349
+            // TOTAL UPLOAD     : 3704000
+            // TOTAL INDEX SWAP : 1201271
+            /* OOOOOOOOOOOOOOOOOOOOOOOOOO M2 OOOOOOOOOOOOOOOOOOOOOOOOOO */
+            // Total : 120057 rows
+            // UPLOAD [149998 x 2] (?v1?v2)
+            // UPLOAD [150000 x 2] (?v2?v3)
+            // SWAP   [149998 x 2] ()
+            // JOIN   [149998 x 150000 : 149998] (?v2?v1 x ?v2?v3)
+            // UPLOAD [3975 x 2] (?v3?v4)
+            // SWAP   [149998 x 3] ()
+            // JOIN   [3975 x 149998 : 24004] (?v3?v4 x ?v3?v1?v2)
+            // UPLOAD [3288516 x 2] (?v4?v5)
+            // SWAP   [24004 x 4] ()
+            // JOIN   [24004 x 3288516 : 877271] (?v4?v3?v1?v2 x ?v4?v5)
+            // UPLOAD [112401 x 2] (?v5?v6)
+            // SWAP   [877271 x 5] ()
+            // JOIN   [112401 x 877271 : 1067076] (?v5?v6 x ?v5?v3?v1?v2?v4)
+            // *******************************
+            // TOTAL JOIN       : 2118349
+            // TOTAL UPLOAD     : 3704890
+            // TOTAL INDEX SWAP : 1201271
+            // *******************************
+
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0), "POS"));
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            // plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v2", context, &variables_bound));
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            // plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v3", context, &variables_bound)); // 4
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3), "POS")); // 5
+            // plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4))); // 6
+            // plan.pushJob(new JoinQueryJob(plan.getJob(5), plan.getJob(6), "?v5", context, &variables_bound)); // 7
+            // plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(7), "?v4", context, &variables_bound));
+            // Total : 276111 rows
+            // UPLOAD [149998 x 2] (?v2?v1)
+            // UPLOAD [150000 x 2] (?v2?v3)
+            // JOIN   [149998 x 150000 : 149998] (?v2?v1 x ?v2?v3)
+            // UPLOAD [3975 x 2] (?v3?v4)
+            // SWAP   [149998 x 3] ()
+            // JOIN   [3975 x 149998 : 24004] (?v3?v4 x ?v3?v1?v2)
+            // UPLOAD [3289262 x 2] (?v5?v4)
+            // UPLOAD [112394 x 2] (?v5?v6)
+            // JOIN   [112394 x 3289262 : 3700403] (?v5?v6 x ?v5?v4)
+            // SWAP   [24004 x 4] ()
+            // SWAP   [3700403 x 3] ()
+            // JOIN   [24004 x 3700403 : 1067076] (?v4?v3?v1?v2 x ?v4?v6?v5)
+            // *******************************
+            // TOTAL JOIN       : 4941481
+            // TOTAL UPLOAD     : 3705629
+            // TOTAL INDEX SWAP : 3874405
+            /* OOOOOOOOOOOOOOOOOOOOOOOOOO M2 OOOOOOOOOOOOOOOOOOOOOOOOOO */
+            // Total : 276477 rows
+            // UPLOAD [149998 x 2] (?v2?v1)
+            // UPLOAD [150000 x 2] (?v2?v3)
+            // JOIN   [149998 x 150000 : 149998] (?v2?v1 x ?v2?v3)
+            // UPLOAD [3975 x 2] (?v3?v4)
+            // SWAP   [149998 x 3] ()
+            // JOIN   [3975 x 149998 : 24004] (?v3?v4 x ?v3?v1?v2)
+            // UPLOAD [3289295 x 2] (?v5?v4)
+            // UPLOAD [112401 x 2] (?v5?v6)
+            // JOIN   [112401 x 3289295 : 3700403] (?v5?v6 x ?v5?v4)
+            // SWAP   [24004 x 4] ()
+            // SWAP   [3700403 x 3] ()
+            // JOIN   [24004 x 3700403 : 1067076] (?v4?v3?v1?v2 x ?v4?v6?v5)
+            // *******************************
+            // TOTAL JOIN       : 4941481
+            // TOTAL UPLOAD     : 3705669
+            // TOTAL INDEX SWAP : 3874405
+
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(4)));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(3)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(0), plan.getJob(1), "?v5", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(2)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(2), plan.getJob(3), "?v4", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(1)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(4), plan.getJob(5), "?v3", context, &variables_bound));
+            plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
+            plan.pushJob(new JoinQueryJob(plan.getJob(6), plan.getJob(7), "?v2", context, &variables_bound));
+            // Total : 39024 rows
+            // UPLOAD [112394 x 2] (?v5?v6)
+            // UPLOAD [3287633 x 2] (?v4?v5)
+            // SWAP   [3287633 x 2] ()
+            // JOIN   [112394 x 3287633 : 3698599] (?v5?v6 x ?v5?v4)
+            // UPLOAD [3975 x 2] (?v3?v4)
+            // SWAP   [3975 x 2] ()
+            // SWAP   [3698599 x 3] ()
+            // JOIN   [3975 x 3698599 : 142219] (?v4?v3 x ?v4?v6?v5)
+            // UPLOAD [150000 x 2] (?v2?v3)
+            // SWAP   [142219 x 4] ()
+            // SWAP   [150000 x 2] ()
+            // JOIN   [142219 x 150000 : 1067076] (?v3?v4?v6?v5 x ?v3?v2)
+            // UPLOAD [149998 x 2] (?v1?v2)
+            // SWAP   [149998 x 2] ()
+            // SWAP   [1067076 x 5] ()
+            // JOIN   [149998 x 1067076 : 1067076] (?v2?v1 x ?v2?v4?v6?v5?v3)
+            // *******************************
+            // TOTAL JOIN       : 5974970
+            // TOTAL UPLOAD     : 3704000
+            // TOTAL INDEX SWAP : 8499500
+            
+            break;
+
         // DBpedia
         case 21: // q1
         case 22: // q2

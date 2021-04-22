@@ -1,6 +1,7 @@
 #ifndef QUERYPLAN_H
 #define QUERYPLAN_H
 
+#include <set>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -13,14 +14,13 @@
 class QueryPlan
 {
 public:
-    QueryPlan(ctpl::thread_pool *threadPool);
+    QueryPlan(ctpl::thread_pool *threadPool, std::set<std::string> &select_variable_set);
     ~QueryPlan();
     void pushJob(QueryJob *job);
     QueryJob* getJob(size_t i);
     void pushParallelJobs(std::vector<QueryJob*> parallelJobs);
     std::vector<QueryJob*>& getParallelJobs(size_t i);
     void setJoinVariables(std::vector<std::string> variables);
-    void setSelectVariables(std::vector<std::string> variables);
 
     size_t size() const;
     size_t parallelSize() const;

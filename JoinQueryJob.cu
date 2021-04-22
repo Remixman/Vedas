@@ -9,6 +9,7 @@
 #include <thrust/remove.h>
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
+#include <thrust/sort.h>
 #include <thrust/execution_policy.h>
 #include <moderngpu/kernel_join.hxx>
 #include <moderngpu/kernel_mergesort.hxx>
@@ -60,8 +61,10 @@ void JoinQueryJob::startJob() {
     auto totalNanosec = std::chrono::duration_cast<std::chrono::nanoseconds>(join_end-join_start).count();
     
     FullRelationIR *ir = dynamic_cast<FullRelationIR *>(intermediateResult);
-    this->planTreeNode->resultSize = ir->size();
-    this->planTreeNode->nanosecTime = totalNanosec;
+    if (this->planTreeNode != nullptr) {
+        this->planTreeNode->resultSize = ir->size();
+        this->planTreeNode->nanosecTime = totalNanosec;
+    }
 
     QueryExecutor::join_ns += totalNanosec;
 }
@@ -107,21 +110,39 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
 
     auto join_func_start = std::chrono::high_resolution_clock::now();
 
+    // Decrease variable count
+    size_t new_col_num = lir->getColumnNum() + rir->getColumnNum() - 1;
+    for (int i = lir->getColumnNum() - 1; i >= 0; --i) {
+        if ((*(this->query_variable_counter))[lir->getHeader(i)] == 0 && lir->getHeader(i) != joinVariable) {
+            lir->removeColumn(i, joinVariable);
+            new_col_num -= 1;
+        }
+    }
+    for (int i = rir->getColumnNum() - 1; i >= 0; --i) {
+        if ((*(this->query_variable_counter))[rir->getHeader(i)] == 0 && rir->getHeader(i) != joinVariable) {
+            rir->removeColumn(i, joinVariable);
+            new_col_num -= 1;
+        }
+    }
+    (*(this->query_variable_counter))[joinVariable] -= 1;
+
     size_t lJoinIdx = lir->getColumnId(joinVariable);
     size_t rJoinIdx = rir->getColumnId(joinVariable);
 
     auto swap_index_start = std::chrono::high_resolution_clock::now();
     // if lJoinIdx != 0 sort column lJoinIdx
     if (lJoinIdx != 0) {
-        lir->sortByColumn(lJoinIdx);
         lir->swapColumn(0, lJoinIdx);
+        lir->sortByFirstColumn();
         lJoinIdx = 0;
+        QueryExecutor::exe_log.push_back( ExecuteLogRecord(SWAP_OP, "", lir->size(), lir->getColumnNum()) );
     }
     // if rJoinIdx != 0 sort column rJoinIdx
     if (rJoinIdx != 0) {
-        rir->sortByColumn(rJoinIdx);
         rir->swapColumn(0, rJoinIdx);
+        rir->sortByFirstColumn();
         rJoinIdx = 0;
+        QueryExecutor::exe_log.push_back( ExecuteLogRecord(SWAP_OP, "", rir->size(), rir->getColumnNum()) );
     }
     auto swap_index_end = std::chrono::high_resolution_clock::now();
     QueryExecutor::swap_index_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(swap_index_end-swap_index_start).count();
@@ -132,7 +153,7 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
     // inner join
     TYPEID* leftRelationPtr = lir->getRelationRawPointer(lJoinIdx);
     TYPEID* rightRelationPtr = rir->getRelationRawPointer(rJoinIdx);
-    size_t column_num = lir->getColumnNum() + rir->getColumnNum() - 1 /* join column */;
+    size_t column_num = new_col_num;
     
     auto join_start = std::chrono::high_resolution_clock::now();
     
@@ -149,15 +170,15 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
     }
     
     mgpu::mem_t<int2> joined_d = mgpu::inner_join(
-      leftRelationPtr, static_cast<int>(lir->getRelationSize(lJoinIdx)),
-      rightRelationPtr, static_cast<int>(rir->getRelationSize(rJoinIdx)),
+      leftRelationPtr, static_cast<int>(lir->size()),
+      rightRelationPtr, static_cast<int>(rir->size()),
       mgpu::less_t<TYPEID>(), *context);
     auto join_end = std::chrono::high_resolution_clock::now();
     QueryExecutor::join_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(join_end-join_start).count();
 
 #ifdef TIME_DEBUG
     std::cout << "\tJoin time : " << std::chrono::duration_cast<std::chrono::microseconds>(join_end-join_start).count() << " microsecond ( " <<
-                 lir->getRelationSize(lJoinIdx) << " x " << rir->getRelationSize(rJoinIdx) << ")\n";
+                 lir->size() << " x " << rir->size() << ")\n";
     std::cout << "\tResult size : " << joined_d.size() << "\n";
 #endif
 
@@ -171,13 +192,13 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
     size_t headerIdx = 0;
     size_t lSize = lir->getColumnNum();
     size_t rSize = rir->getColumnNum();
-    newIr->setHeader(headerIdx++, lir->getHeader(lJoinIdx), lir->getIsPredicate(lJoinIdx));
+    newIr->setHeader(headerIdx++, lir->getHeader(0), lir->getIsPredicate(0));
     for (size_t i = 1; i < lSize; ++i) newIr->setHeader(headerIdx++, lir->getHeader(i), lir->getIsPredicate(i));
     for (size_t i = 1; i < rSize; ++i) newIr->setHeader(headerIdx++, rir->getHeader(i), rir->getIsPredicate(i));
 
     // Setup new relation
     TYPEID* firstCol = newIr->getRelationRawPointer(0);
-    TYPEID* lJoinCol = lir->getRelationRawPointer(lJoinIdx);
+    TYPEID* lJoinCol = lir->getRelationRawPointer(0);
     int2* joinPtr = joined_d.data();
 
     // TYPEID** newIrRelations = new TYPEID*[column_num];
@@ -213,8 +234,6 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
     auto alloc_end = std::chrono::high_resolution_clock::now();
     QueryExecutor::alloc_copy_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(alloc_end-alloc_start).count();
 
-    // auto d2d_copy_start = std::chrono::high_resolution_clock::now();
-    // auto d2d_copy_end = std::chrono::high_resolution_clock::now();
 
     auto bp_start = std::chrono::high_resolution_clock::now();
 
@@ -230,7 +249,7 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
         mgpu::transform([=] __device__(int index) {
             size_t resultIdx = 1;
             int right_idx = joinPtr[index].y;
-            firstCol[index] = lJoinCol[joinPtr[index].x];
+            firstCol[index] = lJoinCol[ joinPtr[index].x ];
             for (size_t i = 1; i < rSize; ++i) {
                 newIrPtr[resultIdx++][index] = rightIrPtr[i][right_idx];
             }
@@ -261,6 +280,9 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
     }
     auto bp_end = std::chrono::high_resolution_clock::now();
     QueryExecutor::join_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(bp_end-bp_start).count();
+
+    std::string joinVars = lir->getHeaders("") + " x " + rir->getHeaders("");
+    QueryExecutor::exe_log.push_back( ExecuteLogRecord(JOIN_OP, joinVars, lir->size(), rir->size(), result_size) );
 
 #ifdef UPDATE_BOUND_AFTER_JOIN
     if (result_size > 0) {
@@ -301,6 +323,8 @@ IR* JoinQueryJob::join(FullRelationIR *lir, FullRelationIR *rir) {
 
 IR* JoinQueryJob::join(FullRelationIR *lir, IndexIR *rir) {
     //size_t lJoinIdx = lir->getColumnId(joinVariable);
+
+    assert(false);
 
     if (rir->getIndexVariable() != joinVariable) {
         // TODO: compare cost of swap index to create IndexIR from FullRelationIR
@@ -459,6 +483,8 @@ IR* JoinQueryJob::join(IndexIR *lir, IndexIR *rir) {
     // thrust copy_if
     // thrust remove_if
 
+    assert(false);
+
     assert(lir->getIndexVariable() == rir->getIndexVariable());
 
     // TODO: after join if one column data is 0, result IR is empty
@@ -500,7 +526,6 @@ IR* JoinQueryJob::join(IndexIR *lir, IndexIR *rir) {
 
     double left_copy_acc = 0;
     auto clean_left_start = std::chrono::high_resolution_clock::now();
-//    std::cout << "Left relation number : " << lir->getColumnNum() << "\n";
     for (size_t c = 0; c < lir->getColumnNum(); c++) {
         // Calculate joined indexed offset size
         TYPEID_DEVICE_VEC left_offst_size(joined_idx_size);
@@ -508,9 +533,6 @@ IR* JoinQueryJob::join(IndexIR *lir, IndexIR *rir) {
                                            thrust::raw_pointer_cast(left_offst_size.data()),
                                            joinPtr, joined_idx_size, lir->getRelationSize(c), true);
         thrust::exclusive_scan(thrust::device, left_offst_size.begin(), left_offst_size.end(), newIr->getIndexOffset(newIrHeaderIdx)->begin());
-//        std::cout << "Left offset size array : \n";
-//        for (auto it = left_offst_size.begin(); it != left_offst_size.end(); ++it) std::cout << *it << " ";
-//        std::cout << "\n";
 
         TYPEID_DEVICE_VEC* left_relation = lir->getRelationData(c);
         size_t left_relation_size = thrust::reduce(thrust::device, left_offst_size.begin(), left_offst_size.end());
@@ -545,7 +567,6 @@ IR* JoinQueryJob::join(IndexIR *lir, IndexIR *rir) {
 
         size_t right_relation_size = thrust::reduce(thrust::device, right_offst_size.begin(), right_offst_size.end());
 
-//        std::cout << "Right relation " << c << " size before filter : " << right_relation_size << " (relation : " << rir->getRelationSize(c) << ") \n";
         size_t new_right_size = this->filterJoinedRelation(rir->getIndexOffsetsRawPtr(c), thrust::raw_pointer_cast(right_offst_size.data()),
                                right_relation, rir->getRelationSize(c), right_relation_size, joinPtr,
                                joined_idx_size, false);
@@ -555,7 +576,6 @@ IR* JoinQueryJob::join(IndexIR *lir, IndexIR *rir) {
         newIr->setRelationData(newIrHeaderIdx, right_relation->begin(), right_relation->begin() + new_right_size);
         auto copy_right_end = std::chrono::high_resolution_clock::now();
         right_copy_acc += std::chrono::duration_cast<std::chrono::milliseconds>(copy_right_end - copy_right_start).count();
-//        std::cout << "Right relation " << c << " size after filter : " << new_right_size << "\n";
         newIrHeaderIdx++;
     }
     auto clean_right_end = std::chrono::high_resolution_clock::now();
@@ -588,10 +608,18 @@ void JoinQueryJob::print() const {
     std::cout << "\tJOIN JOB - join with " << joinVariable << "\n";
 }
 
+void JoinQueryJob::setQueryVarCounter(std::map<std::string, size_t> *query_variable_counter) {
+    this->query_variable_counter = query_variable_counter;
+}
+
 unsigned JoinQueryJob::getLeftIRSize() const {
     return dynamic_cast<FullRelationIR*>(this->leftJob->getIR())->size();
 }
 
 unsigned JoinQueryJob::getRightIRSize() const {
     return dynamic_cast<FullRelationIR*>(this->rightJob->getIR())->size();
+}
+
+std::string JoinQueryJob::getJoinVariable() const {
+    return this->joinVariable;
 }

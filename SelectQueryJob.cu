@@ -11,7 +11,6 @@
 #include "vedas.h"
 #include "QueryExecutor.h"
 #include "SelectQueryJob.h"
-#include "IndexIR.h"
 #include "FullRelationIR.h"
 
 using namespace std;
@@ -103,6 +102,7 @@ void SelectQueryJob::startJob() {
         size_t columnNum = 1;
         size_t relationNum = data_offst_pair.second - data_offst_pair.first; // XXX: not plus 1, end iterator is exclusive
         FullRelationIR *fullIr = new FullRelationIR(columnNum, relationNum);
+        QueryExecutor::exe_log.push_back( ExecuteLogRecord(UPLOAD_OP, fullIr->getHeaders(""), relationNum, 1) );
 
         fullIr->setHeader(0, variables[0], is_predicates[0]);
         auto upload_start = std::chrono::high_resolution_clock::now();
@@ -164,7 +164,7 @@ void SelectQueryJob::startJob() {
 
         // Copy only first column
         if (!is_second_var_used) {
-            // std::cout << "\tDONT USE " << this->variables[1] << " - size : " << l2_offst.second - l2_offst.first << "\n";
+            // std::cout << "\t" << this->variables[1] << " - size : " << l2_offst.second - l2_offst.first << "\n";
             FullRelationIR *fullIr = new FullRelationIR(1, l2_offst.second - l2_offst.first);
             fullIr->setHeader(0, variables[0], is_predicates[0]);
             auto upload_start = std::chrono::high_resolution_clock::now();
@@ -177,6 +177,8 @@ void SelectQueryJob::startJob() {
             auto upload_end = std::chrono::high_resolution_clock::now();
             QueryExecutor::upload_ms += std::chrono::duration_cast<std::chrono::milliseconds>(upload_end-upload_start).count();
 
+            QueryExecutor::exe_log.push_back( ExecuteLogRecord(UPLOAD_OP, fullIr->getHeaders(""), l2_offst.second - l2_offst.first, 1) );
+
             intermediateResult = fullIr;
             return;
         }
@@ -187,6 +189,8 @@ void SelectQueryJob::startJob() {
 
         fullIr->setHeader(0, variables[0], is_predicates[0]);
         fullIr->setHeader(1, variables[1], is_predicates[1]);
+
+        QueryExecutor::exe_log.push_back( ExecuteLogRecord(UPLOAD_OP, fullIr->getHeaders(""), relationNum, 2) );
 
         if (l2_data != nullptr) {
             auto upload_l2_start = std::chrono::high_resolution_clock::now();
@@ -254,103 +258,10 @@ void SelectQueryJob::startJob() {
         auto totalNanosec = std::chrono::duration_cast<std::chrono::nanoseconds>(upload_job_end-upload_job_start).count();
     
         FullRelationIR *ir = dynamic_cast<FullRelationIR *>(intermediateResult);
-        this->planTreeNode->resultSize = ir->size();
-        this->planTreeNode->nanosecTime = totalNanosec;
-    } else {
-        assert(false);
-    }
-}
-
-void SelectQueryJob::startJobCpu() {
-
-    auto l1_bit = thrust::lower_bound(thrust::host, l1_index_values->begin(), l1_index_values->end(), dataid[0]);
-    auto start_offst = thrust::distance(l1_index_values->begin(), l1_bit);
-    auto end_offst = start_offst + 1;
-
-    auto l1_offst_lower_bound = *(l1_index_offsets->begin() + start_offst);
-    auto l1_offst_upper_bound = (end_offst == l1_index_offsets->size())? data->size() :  *(l1_index_offsets->begin() + end_offst);
-
-#ifdef DEBUG
-    std::cout << "Search for l2 offset " << l1_offst_lower_bound << " to " << l1_offst_upper_bound << "\n";
-#endif
-
-    // TODO: if not exist, l1_bit == l1_index_values->end()
-
-    auto l1_offst_bit = thrust::lower_bound(thrust::host, l2_index_offsets->begin(), l2_index_offsets->end(), l1_offst_lower_bound);
-    auto l1_offst_eit = thrust::lower_bound(thrust::host, l2_index_offsets->begin(), l2_index_offsets->end(), l1_offst_upper_bound);
-    auto start_offst2 = thrust::distance(l2_index_offsets->begin(), l1_offst_bit);
-    auto end_offst2 = thrust::distance(l2_index_offsets->begin(), l1_offst_eit);
-
-    auto l2_begin = l2_index_values->begin() + start_offst2;
-    auto l2_end = l2_index_values->begin() + end_offst2;
-
-#ifdef DEBUG
-    std::cout << "L1 Index : ";
-    for (size_t i = 0; i < l1_index_values->size(); ++i)
-        std::cout << *(l1_index_values->begin() + i) << " ";
-    std::cout << "\nFind : " << dataid[0] << "\n";
-    std::cout << "Lower bound index : " << start_offst << " , value = " << *(l1_index_offsets->begin() + start_offst) << "\n";
-    std::cout << "Upper bound index : " << end_offst << " , value = " << *(l1_index_offsets->begin() + end_offst) << "\n";
-#endif
-
-    if (getVariableNum() == 1) {
-
-        auto l2_bit = thrust::lower_bound(thrust::host, l2_begin, l2_end, dataid[1]);
-        auto l2_eit = thrust::upper_bound(thrust::host, l2_begin, l2_end, dataid[1]);
-        auto l2_start_offst = thrust::distance(l2_index_values->begin(), l2_bit);
-        auto l2_end_offst = thrust::distance(l2_index_values->begin(), l2_eit);
-
-        // TODO: if not exist, l2_eit == l2_index_values->end()
-        size_t data_start_offst = *(l2_index_offsets->begin() + l2_start_offst);
-        size_t data_end_offst = *(l2_index_offsets->begin() + l2_end_offst);
-
-#ifdef DEBUG
-        std::cout << "L2 Index : ";
-        for (size_t i = 0; i < l2_index_values->size(); ++i)
-            std::cout << *(l2_index_values->begin() + i) << " ";
-        std::cout << "\nFind : " << dataid[1] << "\n";
-        std::cout << "Lower bound index : " << l2_start_offst << " , value = " << data_start_offst << "\n";
-        std::cout << "Upper bound index : " << l2_end_offst << " , value = " << data_end_offst << "\n";
-#endif
-
-        // select from first and second indices
-        size_t columnNum = 1;
-        size_t relationNum = data_end_offst - data_start_offst; // XXX: not plus 1, end iterator is exclusive
-        FullRelationIR *fullIr = new FullRelationIR(columnNum, relationNum);
-
-        fullIr->setHeader(0, variables[0], is_predicates[0]);
-        fullIr->setRelation(0, data->begin() + data_start_offst, data->begin() + data_end_offst);
-
-#ifdef DEBUG
-        std::cout << "\nLoad Full Relation\n";
-        fullIr->print();
-#endif
-        intermediateResult = fullIr;
-    } else if (getVariableNum() == 2) {
-
-        size_t data_start_offst = *(l2_index_offsets->begin() + start_offst2);
-        size_t data_end_offst = *(l2_index_offsets->begin() + end_offst2);
-
-        auto index_row_count = end_offst2 - start_offst2;
-        vector<size_t> relation_sizes = {data_end_offst - data_start_offst};
-
-        IndexIR *indexIr = new IndexIR(1, index_row_count, relation_sizes, context);
-        indexIr->setIndex(variables[0], is_predicates[0], l2_index_values->begin() + start_offst2, l2_index_values->begin() + end_offst2);
-        indexIr->setHeader(0, variables[1], is_predicates[1]);
-        indexIr->setIndexOffsetAndNormalize(0, l2_index_offsets->begin() + start_offst2, l2_index_offsets->begin() + end_offst2);
-        indexIr->setRelationData(0, data->begin() + data_start_offst, data->begin() + data_end_offst);
-
-#ifdef DEBUG
-        std::cout << "SELECTED JOB Copy data from " << data_start_offst << " to " << data_end_offst << "\n";
-        std::cout << "Data : ";
-        for (auto ii = data->begin() + data_start_offst; ii < data->begin() + data_end_offst; ++ii) {
-            std::cout << *ii << " ";
-        }std::cout << "\n";
-#endif
-
-        //std::cout << "\nLoad Indexed Relation\n"; indexIr->print();
-
-        intermediateResult = indexIr;
+        if (this->planTreeNode != nullptr) {
+            this->planTreeNode->resultSize = ir->size();
+            this->planTreeNode->nanosecTime = totalNanosec;
+        }
     } else {
         assert(false);
     }
