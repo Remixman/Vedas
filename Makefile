@@ -7,121 +7,135 @@ ifeq ($(SMS),)
 $(info >>> WARNING - no SM architectures have been specified - waiving sample <<<)
 SAMPLE_ENABLED := 0
 endif
+GCCVERSIONGTEQ9 := $(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 9)
 
 # Generate PTX code from the highest SM architecture in $(SMS) to guarantee forward-compatibility
 HIGHEST_SM := $(lastword $(sort $(SMS)))
-NT := 128
-VT := 11
-SORTEDSEARCH_VT := 15
 
 DEBUG_LEVEL = #-g -G
-EXTRA_CONFIGS = -DUPDATE_BOUND_AFTER_JOIN #-DLITERAL_DICT #-DAUTO_PLANNER -DVERBOSE_DEBUG -DTIME_DEBUG 
+
+ifeq "$(GCCVERSIONGTEQ9)" "1"
+	EXTRA_CONFIGS := -std=c++11
+else
+	EXTRA_CONFIGS := -std=c++14
+endif
+# EXTRA_CONFIGS := $(EXTRA_CONFIGS) -DVERBOSE_DEBUG
+# EXTRA_CONFIGS := $(EXTRA_CONFIGS) -DTIME_DEBUG
+
+
 MGPU_FLAGS = ${DEBUG_LEVEL} $(EXTRA_CONFIGS) \
-						-DNT=$(NT) -DVT=$(VT) -DSORTEDSEARCH_VT=$(SORTEDSEARCH_VT) \
-						-std=c++11 \
 						-gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM) \
 						-I ./ --expt-extended-lambda -Wno-deprecated-declarations \
 						-lraptor2 -lrasqal
 CUDPP_FLAGS = -L /home/remixman/cudpp/build/lib -lcudpp -lcudpp_hash
-# OMP_ENABLE_FLAG = -Xcompiler " -fopenmp"
+
+VEDAS_QUERY_DEPS =  IR.o IndexIR.o FullRelationIR.o DataMetaInfo.o RdfData.o TriplePattern.o \
+                    SparqlResult.o QueryExecutor.o VedasStorage.o QueryPlan.o QueryGraph.o \
+                    QueryJob.o JoinQueryJob.o SelectQueryJob.o IndexSwapJob.o TransferJob.o \
+                    InputParser.o ExecutionPlanTree.o ExecutionWorker.o EmptyIntervalDict.o \
+                    SparqlQuery.o DataMetaInfo.o SegmentTree.o Histogram.o
+
+VEDAS_BUILD_DEPS = 	SegmentTree.o DataMetaInfo.o Histogram.o \
+										InputParser.o VedasStorage.o RdfData.o \
+										src/LinkedData.cu src/LinkedData.h
 
 all: vdQuery vdBuild vdBench vdClean
 	echo ${GREEN}===================== SUCCESS =====================${NC}
 
-modernGpuConfig:
-	cp moderngpu-edits/kernel_load_balance.hxx moderngpu/kernel_load_balance.hxx
-	cp moderngpu-edits/kernel_scan.hxx moderngpu/kernel_scan.hxx
-	cp moderngpu-edits/kernel_sortedsearch.hxx moderngpu/kernel_sortedsearch.hxx
+vdBuild: $(VEDAS_BUILD_DEPS) src/VedasBuild.cu src/loader.cu
+	nvcc $(MGPU_FLAGS) *.o src/loader.cu -o vdBuild src/VedasBuild.cu src/LinkedData.cu
 
-testPartition: TestPartition.cpp
-	g++ -std=c++11 TestPartition.cpp -o testPartition -lmetis
+vdBench: $(VEDAS_QUERY_DEPS) src/VedasBench.cu src/loader.cu
+	nvcc $(MGPU_FLAGS) *.o src/loader.cu -o vdBench src/VedasBench.cu
 
-vdBuild: FullRelationIR.o RdfData.o InputParser.o VedasStorage.o ExecutionWorker.o LinkedData.o VedasBuild.cu
-	nvcc $(MGPU_FLAGS) $(OMP_ENABLE_FLAG) *.o loader.cu -o vdBuild VedasBuild.cu
+vdQuery: $(VEDAS_QUERY_DEPS) src/VedasQuery.cu src/loader.cu
+	nvcc $(MGPU_FLAGS) *.o src/loader.cu src/VedasQuery.cu -o vdQuery
 
-vdBench: TriplePattern.o QueryExecutor.o VedasStorage.o QueryIndex.o QueryPlan.o RdfData.o IndexIR.o FullRelationIR.o SwapIndexJob.o SelectQueryJob.o JoinQueryJob.o InputParser.o IR.o ExecutionPlanTree.o ExecutionWorker.o VariableNode.o IrNode.o TriplePatternNode.o VedasBench.cu loader.cu
-	nvcc $(MGPU_FLAGS) $(OMP_ENABLE_FLAG) *.o loader.cu -o vdBench VedasBench.cu
+vdClean: src/VedasClean.cu
+	nvcc $(MGPU_FLAGS) src/VedasClean.cu -o vdClean
 
-vdQuery: TriplePattern.o QueryExecutor.o VedasStorage.o QueryIndex.o QueryPlan.o RdfData.o IndexIR.o FullRelationIR.o SwapIndexJob.o SelectQueryJob.o JoinQueryJob.o InputParser.o IR.o ExecutionPlanTree.o ExecutionWorker.o VariableNode.o IrNode.o TriplePatternNode.o VedasQuery.cu loader.cu
-	nvcc $(MGPU_FLAGS) $(OMP_ENABLE_FLAG) *.o loader.cu VedasQuery.cu -o vdQuery
+SparqlResult.o: src/SparqlResult.h src/SparqlResult.cu src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o SparqlResult.o src/SparqlResult.cu
 
-vdClean: VedasClean.cu
-	nvcc $(MGPU_FLAGS) VedasClean.cu -o vdClean
+SparqlQuery.o: src/SparqlQuery.h src/SparqlQuery.cu src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o SparqlQuery.o src/SparqlQuery.cu
 
-entail: join.cu
-	nvcc $(MGPU_FLAGS) $(CUDPP_FLAGS) -o join join.cu 
+TriplePattern.o: src/TriplePattern.h src/TriplePattern.cu src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o TriplePattern.o src/TriplePattern.cu
 
-exp: exp.cu
-	nvcc $(MGPU_FLAGS) $(CUDPP_FLAGS) -o exp exp.cu 
+QueryExecutor.o: src/QueryExecutor.h src/QueryExecutor.cu src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o QueryExecutor.o src/QueryExecutor.cu
 
-SparqlQuery.o: SparqlQuery.h SparqlQuery.cu vedas.h
-	nvcc $(MGPU_FLAGS) -c -o SparqlQuery.o SparqlQuery.cu
+VedasStorage.o: src/VedasStorage.cu src/VedasStorage.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o VedasStorage.o src/VedasStorage.cu
 
-SparqlResult.o: FullRelationIR.o SparqlResult.h SparqlResult.cu vedas.h
-	nvcc $(MGPU_FLAGS) -c -o SparqlResult.o SparqlResult.cu
+RdfData.o: src/RdfData.h src/RdfData.cu src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o RdfData.o src/RdfData.cu
 
-TriplePattern.o: TriplePattern.h TriplePattern.cu vedas.h
-	nvcc $(MGPU_FLAGS) -c -o TriplePattern.o TriplePattern.cu
+DataMetaInfo.o: src/DataMetaInfo.h src/DataMetaInfo.cu src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o DataMetaInfo.o src/DataMetaInfo.cu
 
-QueryExecutor.o: SparqlResult.o SparqlQuery.o JoinGraph.o QueryExecutor.h QueryExecutor.cu vedas.h
-	nvcc -I ./ $(MGPU_FLAGS) -c -o QueryExecutor.o QueryExecutor.cu
+QueryPlan.o: src/QueryPlan.cu src/QueryPlan.h src/vedas.h 
+	nvcc $(MGPU_FLAGS) -c -o QueryPlan.o src/QueryPlan.cu
 
-QueryIndex.o: QueryIndex.h QueryIndex.cu vedas.h
-	nvcc $(MGPU_FLAGS) -c -o QueryIndex.o QueryIndex.cu
+IR.o: src/IR.cu src/IR.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o IR.o src/IR.cu
 
-VedasStorage.o: VedasStorage.cu VedasStorage.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o VedasStorage.o VedasStorage.cu
+IndexIR.o: src/IR.h src/IndexIR.cu src/IndexIR.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o IndexIR.o src/IndexIR.cu
 
-RdfData.o: RdfData.cu RdfData.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o RdfData.o RdfData.cu
+FullRelationIR.o: src/IR.h src/FullRelationIR.cu src/FullRelationIR.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o FullRelationIR.o src/FullRelationIR.cu
 
-QueryPlan.o: SparqlResult.o JoinQueryJob.o QueryPlan.cu QueryPlan.h vedas.h 
-	nvcc $(MGPU_FLAGS) -c -o QueryPlan.o QueryPlan.cu
+ExecutionPlanTree.o: TriplePattern.o src/ExecutionPlanTree.cu src/ExecutionPlanTree.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o ExecutionPlanTree.o src/ExecutionPlanTree.cu
 
-IR.o: IR.cu IR.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o IR.o IR.cu
+QueryGraph.o: src/QueryGraph.cu src/QueryGraph.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o QueryGraph.o src/QueryGraph.cu
 
-IndexIR.o: IR.o IndexIR.cu IndexIR.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o IndexIR.o IndexIR.cu
+QueryJob.o: src/QueryJob.cu src/QueryJob.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o QueryJob.o src/QueryJob.cu
 
-FullRelationIR.o: IR.o FullRelationIR.cu FullRelationIR.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o FullRelationIR.o FullRelationIR.cu
+JoinQueryJob.o: src/JoinQueryJob.cu src/JoinQueryJob.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o JoinQueryJob.o src/JoinQueryJob.cu
 
-ExecutionPlanTree.o: ExecutionPlanTree.cu ExecutionPlanTree.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o ExecutionPlanTree.o ExecutionPlanTree.cu
+SelectQueryJob.o: src/SelectQueryJob.cu src/SelectQueryJob.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o SelectQueryJob.o src/SelectQueryJob.cu
 
-QueryJob.o: QueryJob.cu QueryJob.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o QueryJob.o QueryJob.cu
+IndexSwapJob.o: src/IndexSwapJob.cu src/IndexSwapJob.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o IndexSwapJob.o src/IndexSwapJob.cu
 
-SelectQueryJob.o: QueryJob.o QueryExecutor.o SelectQueryJob.cu SelectQueryJob.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o SelectQueryJob.o SelectQueryJob.cu
+TransferJob.o: src/TransferJob.cu src/TransferJob.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o TransferJob.o src/TransferJob.cu
 
-JoinQueryJob.o: QueryJob.o JoinQueryJob.cu JoinQueryJob.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o JoinQueryJob.o JoinQueryJob.cu
+InputParser.o: src/InputParser.cu src/InputParser.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o InputParser.o src/InputParser.cu
 
-SwapIndexJob.o: QueryJob.o SwapIndexJob.cu SwapIndexJob.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o SwapIndexJob.o SwapIndexJob.cu
-	
-InputParser.o: InputParser.cu InputParser.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o InputParser.o InputParser.cu
-	
-LinkedData.o: LinkedData.cu LinkedData.h vedas.h
-	nvcc $(MGPU_FLAGS) -c -o LinkedData.o LinkedData.cu
+ExecutionWorker.o: src/ExecutionWorker.cu src/ExecutionWorker.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o ExecutionWorker.o src/ExecutionWorker.cu
 
-ExecutionWorker.o: ExecutionWorker.cu ExecutionWorker.h vedas.h
-	nvcc -Xcompiler="-pthread" $(MGPU_FLAGS) -c -o ExecutionWorker.o ExecutionWorker.cu
+EmptyIntervalDict.o: src/EmptyIntervalDict.cu src/EmptyIntervalDict.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o EmptyIntervalDict.o src/EmptyIntervalDict.cu
 
-JoinGraph.o: JoinGraph/JoinGraph.cu JoinGraph/JoinGraph.h
-	nvcc $(MGPU_FLAGS) -c -o JoinGraph.o JoinGraph/JoinGraph.cu
+SegmentTree.o: src/util/SegmentTree.cu src/util/SegmentTree.h
+	nvcc $(MGPU_FLAGS) -c -o SegmentTree.o src/util/SegmentTree.cu 
 
-VariableNode.o: JoinGraph/VariableNode.cu JoinGraph/VariableNode.h
-	nvcc $(MGPU_FLAGS) -c -o VariableNode.o JoinGraph/VariableNode.cu
+Histogram.o: src/Histogram.cu src/Histogram.h
+	nvcc $(MGPU_FLAGS) -c -o Histogram.o src/Histogram.cu
+# ar -crs libveda.a Histogram.o SegmentTree.o
 
-IrNode.o: JoinGraph/IrNode.cu JoinGraph/IrNode.h
-	nvcc $(MGPU_FLAGS) -c -o IrNode.o JoinGraph/IrNode.cu
 
-TriplePatternNode.o: JoinGraph/TriplePatternNode.cu JoinGraph/TriplePatternNode.h
-	nvcc $(MGPU_FLAGS) -c -o TriplePatternNode.o JoinGraph/TriplePatternNode.cu
+test: FORCE
+	nvcc $(MGPU_FLAGS) -o testrunner test/*.cu $(TESTSOURCES) -lgtest
+	./testrunner
 
 clean:
 	rm -rf join vdBuild vdQuery vdClean vdBench *.o
+
+testclean:
+	rm testrunner
+
+FORCE: ;
+
+testPartition: tools/TestPartition.cpp
+	g++ -std=c++11 tools/TestPartition.cpp -o testPartition -lmetis

@@ -45,3 +45,21 @@ pip install -r requirements.txt
 python graphml.py
 ```
 The output file *triple-data.graphml* can opened with any supported software e.g. Graphia, Gephi etc.
+
+## BibTeX
+```
+@Article{vedas2021,
+  author={Makpaisit, Pisit and Chantrapornchai, Chantana},
+  title={VEDAS: an efficient GPU alternative for store and query of large RDF data sets},
+  journal={Journal of Big Data},
+  year={2021},
+  month={Sep},
+  day={16},
+  volume={8},
+  number={1},
+  pages={125},
+  issn={2196-1115},
+  doi={10.1186/s40537-021-00513-y},
+  url={https://doi.org/10.1186/s40537-021-00513-y}
+}
+```
