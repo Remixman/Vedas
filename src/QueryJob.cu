@@ -3,3 +3,7 @@
 QueryJob::QueryJob() {
 
 }
+
+int QueryJob::getGpuId() {
+  return gpuId;
+}

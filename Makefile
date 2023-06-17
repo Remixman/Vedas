@@ -7,18 +7,13 @@ ifeq ($(SMS),)
 $(info >>> WARNING - no SM architectures have been specified - waiving sample <<<)
 SAMPLE_ENABLED := 0
 endif
-GCCVERSIONGTEQ9 := $(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 9)
 
 # Generate PTX code from the highest SM architecture in $(SMS) to guarantee forward-compatibility
 HIGHEST_SM := $(lastword $(sort $(SMS)))
 
 DEBUG_LEVEL = #-g -G
 
-ifeq "$(GCCVERSIONGTEQ9)" "1"
-	EXTRA_CONFIGS := -std=c++11
-else
-	EXTRA_CONFIGS := -std=c++14
-endif
+EXTRA_CONFIGS := -std=c++17 -O3 -Xptxas -O3
 # EXTRA_CONFIGS := $(EXTRA_CONFIGS) -DVERBOSE_DEBUG
 # EXTRA_CONFIGS := $(EXTRA_CONFIGS) -DTIME_DEBUG
 
@@ -27,10 +22,9 @@ MGPU_FLAGS = ${DEBUG_LEVEL} $(EXTRA_CONFIGS) \
 						-gencode arch=compute_$(HIGHEST_SM),code=compute_$(HIGHEST_SM) \
 						-I ./ --expt-extended-lambda -Wno-deprecated-declarations \
 						-lraptor2 -lrasqal
-CUDPP_FLAGS = -L /home/remixman/cudpp/build/lib -lcudpp -lcudpp_hash
 
-VEDAS_QUERY_DEPS =  IR.o IndexIR.o FullRelationIR.o DataMetaInfo.o RdfData.o TriplePattern.o \
-                    SparqlResult.o QueryExecutor.o VedasStorage.o QueryPlan.o QueryGraph.o \
+VEDAS_QUERY_DEPS =  IR.o FullRelationIR.o DataMetaInfo.o RdfData.o TriplePattern.o \
+                    SparqlResult.o QueryExecutor.o VedasStorage.o QueryPlan.o QueryGraph.o JoinGraph.o \
                     QueryJob.o JoinQueryJob.o SelectQueryJob.o IndexSwapJob.o TransferJob.o \
                     InputParser.o ExecutionPlanTree.o ExecutionWorker.o EmptyIntervalDict.o \
                     SparqlQuery.o DataMetaInfo.o SegmentTree.o Histogram.o
@@ -81,9 +75,6 @@ QueryPlan.o: src/QueryPlan.cu src/QueryPlan.h src/vedas.h
 IR.o: src/IR.cu src/IR.h src/vedas.h
 	nvcc $(MGPU_FLAGS) -c -o IR.o src/IR.cu
 
-IndexIR.o: src/IR.h src/IndexIR.cu src/IndexIR.h src/vedas.h
-	nvcc $(MGPU_FLAGS) -c -o IndexIR.o src/IndexIR.cu
-
 FullRelationIR.o: src/IR.h src/FullRelationIR.cu src/FullRelationIR.h src/vedas.h
 	nvcc $(MGPU_FLAGS) -c -o FullRelationIR.o src/FullRelationIR.cu
 
@@ -92,6 +83,9 @@ ExecutionPlanTree.o: TriplePattern.o src/ExecutionPlanTree.cu src/ExecutionPlanT
 
 QueryGraph.o: src/QueryGraph.cu src/QueryGraph.h src/vedas.h
 	nvcc $(MGPU_FLAGS) -c -o QueryGraph.o src/QueryGraph.cu
+
+JoinGraph.o: src/JoinGraph.cu src/JoinGraph.h src/vedas.h
+	nvcc $(MGPU_FLAGS) -c -o JoinGraph.o src/JoinGraph.cu
 
 QueryJob.o: src/QueryJob.cu src/QueryJob.h src/vedas.h
 	nvcc $(MGPU_FLAGS) -c -o QueryJob.o src/QueryJob.cu
@@ -122,7 +116,7 @@ SegmentTree.o: src/util/SegmentTree.cu src/util/SegmentTree.h
 
 Histogram.o: src/Histogram.cu src/Histogram.h
 	nvcc $(MGPU_FLAGS) -c -o Histogram.o src/Histogram.cu
-# ar -crs libveda.a Histogram.o SegmentTree.o
+
 
 
 test: FORCE

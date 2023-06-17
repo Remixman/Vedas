@@ -83,7 +83,8 @@ size_t SelectQueryJob::findUpperBoundDataOffset(TYPEID val,
     return thrust::distance(raw_start, new_offst);
 }
 
-int SelectQueryJob::startJob() {
+int SelectQueryJob::startJob(int gpuId) {
+    this->gpuId = gpuId;
     auto upload_job_start = std::chrono::high_resolution_clock::now();
 
     auto l2_offst = QueryExecutor::findL2OffsetFromL1(l1_index_values, l1_index_offsets, dataid[0], data->size());
@@ -97,7 +98,7 @@ int SelectQueryJob::startJob() {
         // select from first and second indices
         size_t relationNum = data_offst_pair.second - data_offst_pair.first; // XXX: not plus 1, end iterator is exclusive
         FullRelationIR *fullIr = new FullRelationIR(1 /*columnNum*/, relationNum);
-        QueryExecutor::exe_log.push_back( ExecuteLogRecord(UPLOAD_OP, fullIr->getHeaders(""), relationNum, 1) );
+        QueryExecutor::exe_log.push_back( ExecuteLogRecord(gpuId, UPLOAD_OP, fullIr->getHeaders(""), relationNum, 1) );
 
         // Upload data to intermediate IR
         fullIr->setHeader(0, variables[0], is_predicates[0]);
@@ -158,7 +159,7 @@ int SelectQueryJob::startJob() {
             auto upload_end = std::chrono::high_resolution_clock::now();
             QueryExecutor::upload_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(upload_end-upload_start).count();
 
-            QueryExecutor::exe_log.push_back( ExecuteLogRecord(UPLOAD_OP, fullIr->getHeaders(""), l2_offst.second - l2_offst.first, 1) );
+            QueryExecutor::exe_log.push_back( ExecuteLogRecord(gpuId, UPLOAD_OP, fullIr->getHeaders(""), l2_offst.second - l2_offst.first, 1) );
 
             intermediateResult = fullIr;
             return 0;
@@ -177,7 +178,7 @@ int SelectQueryJob::startJob() {
         fullIr->setHeader(0, variables[0], is_predicates[0]);
         fullIr->setHeader(1, variables[1], is_predicates[1]);
 
-        QueryExecutor::exe_log.push_back( ExecuteLogRecord(UPLOAD_OP, fullIr->getHeaders(""), relationNum, 2) );
+        QueryExecutor::exe_log.push_back( ExecuteLogRecord(gpuId, UPLOAD_OP, fullIr->getHeaders(""), relationNum, 2) );
 
         if (l2_data != nullptr) {
 #ifdef VERBOSE_DEBUG
@@ -195,7 +196,6 @@ int SelectQueryJob::startJob() {
             std::cout << "Upload L2 data time : " << std::setprecision(3) << std::chrono::duration_cast<std::chrono::milliseconds>(upload_l2_end-upload_l2_start).count() << '\n';
 #endif
         } else {
-            /* XXX IndexIR Case? Transfrom to Column data */
             std::cout << "\t2 VARS INDEX RELATION UPLOAD\n";
             auto upload_idx_start = std::chrono::high_resolution_clock::now();
             TYPEID_DEVICE_VEC index_values(l2_offst.second - l2_offst.first);

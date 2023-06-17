@@ -6,7 +6,6 @@
 #include <chrono>
 #include "vedas.h"
 #include "FullRelationIR.h"
-#include "IndexIR.h"
 #include "SparqlResult.h"
 #include "QueryExecutor.h"
 
@@ -18,17 +17,7 @@ SparqlResult::SparqlResult()
 }
 
 void SparqlResult::setResult(IR *ir) {
-    if (IndexIR *iir = dynamic_cast<IndexIR*>(ir)) {
-        auto transform_start = std::chrono::high_resolution_clock::now();
-        resultIR = iir->toFullRelationIR();
-        auto transform_end = std::chrono::high_resolution_clock::now();
-#ifdef VERBOSE_DEBUG
-        std::cout << "Transform from IndexIR to Full IR time : " << std::setprecision(3) << std::chrono::duration_cast<std::chrono::milliseconds>(transform_end-transform_start).count() << " ms.\n";
-#endif
-    } else {
-        resultIR = dynamic_cast<FullRelationIR*>(ir);
-    }
-
+    resultIR = dynamic_cast<FullRelationIR*>(ir);
     assert(resultIR != nullptr);
 }
 

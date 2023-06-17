@@ -35,10 +35,20 @@ bool GraphEdge::hasVariable(const std::string v) {
     return vars.count(v) > 0;
 }
 
-QueryGraph::QueryGraph(SparqlQuery *sparqlQuery) {
+QueryGraph::QueryGraph(SparqlQuery *sparqlQuery, std::vector<int>* selected) {
+
     size_t patternSize = sparqlQuery->getPatternNum();
+    std::set<int> selectedSet;
+    if (selected != nullptr) {
+        for (auto t: *selected) selectedSet.insert(t);
+    } else {
+        for (size_t i = 0; i < patternSize; ++i) selectedSet.insert(i);
+    }
+
     for (size_t i = 0; i < patternSize; i++) {
         TriplePattern *tp = sparqlQuery->getPatternPtr(i);
+
+        if (selectedSet.count(i) == 0) continue;
         
         std::string subject = tp->subjectIsVariable() ? tp->getSubject() : std::to_string(tp->getSubjectId());
         std::string object = tp->objectIsVariable() ? tp->getObject() : std::to_string(tp->getObjectId());

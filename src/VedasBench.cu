@@ -13,7 +13,6 @@
 #include <moderngpu/context.hxx>
 #include <raptor2/raptor2.h>
 #include <rasqal/rasqal.h>
-// #include "ctpl_stl.h"
 #include "vedas.h"
 #include "ExecutionWorker.h"
 #include "InputParser.h"
@@ -62,6 +61,7 @@ int main(int argc, char **argv) {
         }
         if (gpu_ids.size() > 0 && gpu_ids[0] < max_device) cudaSetDevice(gpu_ids[0]);
     }
+    if (gpu_ids.size() == 0) gpu_ids.push_back(0);
 
     int device;
     cudaGetDevice(&device);
@@ -124,13 +124,6 @@ int main(int argc, char **argv) {
     QueryExecutor::ENABLE_LITERAL_DICT = literalDict;
     // QueryExecutor::ENABLE_PREUPLOAD_BOUND_DICT = false;
     QueryExecutor::ENABLE_BOUND_DICT_AFTER_JOIN = false;
-    
-    
-
-    // QueryExecutor::objectHistogram = new Histogram(
-    //             "hist-object-equal-width.txt", "hist-object-equal-depth.txt");
-    // QueryExecutor::subjectHistogram = new Histogram(
-    //             "hist-subject-equal-width.txt", "hist-subject-equal-depth.txt");
 
     std::cout << "Load Database [" << argv[1] << "]\n";
     std::cout << "Triple Size          : " << vedasStorage->getTripleSize() << '\n';

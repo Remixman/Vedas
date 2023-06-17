@@ -67,8 +67,11 @@ int main(int argc, char **argv) {
             }
             gpu_ids.push_back(device_id);
         }
-        if (gpu_ids.size() > 0 && gpu_ids[0] < max_device) cudaSetDevice(gpu_ids[0]);
+        if (gpu_ids.size() > 0 && gpu_ids[0] < max_device) {
+            cudaSetDevice(gpu_ids[0]);
+        }
     }
+    if (gpu_ids.size() == 0) gpu_ids.push_back(0);
 
     int device;
     cudaGetDevice(&device);
@@ -78,7 +81,6 @@ int main(int argc, char **argv) {
     std::cout << "Clock rate : " << deviceProp.clockRate << " , Memory clock rate : "
               << deviceProp.memoryClockRate << "\n";
 
-    // ctpl::thread_pool threadPool(2 /* poolSize */);
     ExecutionWorker worker(gpu_ids);
 
     standard_context_t context;
@@ -186,6 +188,7 @@ int main(int argc, char **argv) {
             print_ms_ns_time("Total eliminate duplicate time", QueryExecutor::eliminate_duplicate_ns);
             print_ms_ns_time("Total scan and split time", QueryExecutor::scan_to_split_ns);
             print_ms_ns_time("Total EIF time        ", QueryExecutor::eif_ns);
+            print_ms_ns_time("Total P2P transfer time ", QueryExecutor::p2p_transfer_ns);
             std::cout << '\n';
             
             std::cout <<      "# of updating empty interval : " << QueryExecutor::eif_count << '\n';
@@ -272,6 +275,7 @@ void print_ms_ns_time(const std::string& label, double ns_time) {
 void print_exec_log(std::vector<ExecuteLogRecord> &records) {
     size_t total_upload = 0, total_join = 0, total_swap = 0;
     for (auto r : records) {
+        std::cout << '(' << r.deviceId << ')';
         switch (r.op) {
             case JOIN_OP:
             {

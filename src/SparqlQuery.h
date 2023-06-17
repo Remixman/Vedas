@@ -15,6 +15,7 @@ public:
     std::vector<TriplePattern> getPatterns();
     TriplePattern getPattern(size_t i);
     TriplePattern *getPatternPtr(size_t i);
+    std::vector<TriplePattern> * getPatternsPtr();
     size_t getPatternNum() const;
     std::vector<std::string> getVariables() const;
     std::set<std::string> getSelectedVariables() const;

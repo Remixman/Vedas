@@ -9,9 +9,11 @@
 
 using namespace std;
 
-TransferJob::TransferJob(size_t src_thread_id, size_t dest_thread_id, QueryJob *job) {
+TransferJob::TransferJob(size_t src_thread_id, size_t dest_thread_id, int src_gpu_id, int dest_gpu_id, QueryJob *job) {
     this->src_thread_id = src_thread_id;
     this->dest_thread_id = dest_thread_id;
+    this->src_gpu_id = src_gpu_id;
+    this->dest_gpu_id = dest_gpu_id;
     this->job = job;
 }
 
@@ -23,18 +25,15 @@ IR* TransferJob::getIR() {
     return this->intermediateResult;
 }
 
-int TransferJob::startJob() {
-    FullRelationIR *ir = nullptr;
-    // while (true) {
-        intermediateResult = job->getIR();
-        ir = dynamic_cast<FullRelationIR*>(intermediateResult);
-        // if (ir != nullptr) break;
-        assert(ir != nullptr);
-    // }
-    std::cout << "Start transfer job thread " << src_thread_id << " to thread "
-        << dest_thread_id << "(d " << gpu_ids[src_thread_id] << " to "
-        << " d " << gpu_ids[dest_thread_id] << ")\n";
-    ir->movePeer(gpu_ids[src_thread_id], gpu_ids[dest_thread_id]);
+int TransferJob::startJob(int gpuId) {
+    this->gpuId = gpuId;
+    FullRelationIR *ir = dynamic_cast<FullRelationIR*>(job->getIR());
+    assert(ir != nullptr);
+    // std::cout << "Start transfer job thread " << src_thread_id << " to thread "
+       // << dest_thread_id << "(d " << src_gpu_id << " to " << " d " << dest_gpu_id << ")\n";
+    // std::cout << "Transfer size : " << ir->size() << "\n";
+    ir->movePeer(src_gpu_id, dest_gpu_id);
+    this->intermediateResult = ir;
 
     return 0;
 }
@@ -45,9 +44,4 @@ void TransferJob::print() const {
 
 std::string TransferJob::jobTypeName() const {
     return "Transfer Job";
-}
-
-
-void TransferJob::setGpuIds(const std::vector<int>& gpu_ids) {
-    this->gpu_ids = gpu_ids;
 }

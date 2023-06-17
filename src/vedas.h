@@ -87,11 +87,13 @@ void load_test_rdf(TYPEID_HOST_VEC &s, TYPEID_HOST_VEC &p, TYPEID_HOST_VEC &o, D
 enum ExecuteLogRecordOp { JOIN_OP, UPLOAD_OP, SWAP_OP };
 
 struct ExecuteLogRecord {
+  int deviceId;
   ExecuteLogRecordOp op;
   size_t param1, param2, param3;
   std::string paramstr;
 
-  ExecuteLogRecord(ExecuteLogRecordOp op, std::string paramstr, size_t param1, size_t param2 = 0, size_t param3 = 0) {
+  ExecuteLogRecord(int deviceId, ExecuteLogRecordOp op, std::string paramstr, size_t param1, size_t param2 = 0, size_t param3 = 0) {
+    this->deviceId = deviceId;
     this->op = op;
     this->paramstr = paramstr;
     this->param1 = param1;

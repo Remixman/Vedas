@@ -23,7 +23,7 @@ public:
                    std::map< std::string, std::pair<TYPEID, TYPEID> > *variables_bound, EmptyIntervalDict *ei_dict,
                    bool *is_predicates, mgpu::standard_context_t* context);
     ~SelectQueryJob() override;
-    int startJob() override;
+    int startJob(int gpuId) override;
     IR* getIR() override;
     TYPEID_HOST_VEC *getL1IndexValues() const;
     TYPEID_HOST_VEC *getL1IndexOffsets() const;

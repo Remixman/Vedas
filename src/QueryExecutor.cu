@@ -14,6 +14,7 @@
 #include "ExecutionPlanTree.h"
 #include "QueryExecutor.h"
 #include "QueryGraph.h"
+#include "JoinGraph.h"
 #include "JoinQueryJob.h"
 #include "IndexSwapJob.h"
 #include "TransferJob.h"
@@ -35,9 +36,8 @@ double QueryExecutor::swap_index_ns;
 double QueryExecutor::eliminate_duplicate_ns;
 double QueryExecutor::convert_to_id_ns;
 double QueryExecutor::convert_to_iri_ns;
-double QueryExecutor::update_db_dict_ns;
-double QueryExecutor::update_db_dict2_ns;
 double QueryExecutor::scan_to_split_ns;
+double QueryExecutor::p2p_transfer_ns;
 double QueryExecutor::prescan_extra_ns;
 double QueryExecutor::eif_ns;
 int QueryExecutor::eif_count;
@@ -96,7 +96,6 @@ DataIndex TriplePatternDataIndex::retrieveMinLenDataIndex(size_t idx) {
 // QueryExecutor::QueryExecutor(VedasStorage *vedasStorage, ctpl::thread_pool *threadPool, mgpu::standard_context_t* context, int plan_id) {
 QueryExecutor::QueryExecutor(VedasStorage *vedasStorage, ExecutionWorker *worker, mgpu::standard_context_t* context) {
     this->vedasStorage = vedasStorage;
-    // this->threadPool = threadPool;
     this->worker = worker;
     this->context = context;
 }
@@ -105,32 +104,32 @@ void QueryExecutor::setGpuIds(const std::vector<int>& gpu_ids) {
     this->gpu_ids = gpu_ids;
 }
 
-int QueryExecutor::postorderTraversal(QueryPlan &plan, PlanTreeNode* root) {
+int QueryExecutor::postorderTraversal(QueryPlan &plan, PlanTreeNode* root, size_t thread_no = 0) {
     if (root == nullptr) return -1;
 
     int j1, j2;
-    if (root->child1 != nullptr) j1 = postorderTraversal(plan, root->child1);
-    if (root->child2 != nullptr) j2 = postorderTraversal(plan, root->child2);
+    if (root->child1 != nullptr) j1 = postorderTraversal(plan, root->child1, thread_no);
+    if (root->child2 != nullptr) j2 = postorderTraversal(plan, root->child2, thread_no);
     
-    // std::cout << root->op << " (" << root->debugName << ")\n";
+    // std::cout << root->op << " (" << root->debugName << ") thread " << thread_no << " \n";
     switch (root->op) {
         case UPLOAD:
             if (root->tp->getVariableNum() == 1) {
-                plan.pushJob(this->createSelectQueryJob(root->tp));
+                plan.pushJob(this->createSelectQueryJob(root->tp), thread_no);
             } else if (root->tp->getVariableNum() == 2) {
-               std::string indexUse = (root->tp->getSubject() == root->var)? "PSO" : "POS";
-               plan.pushJob(this->createSelectQueryJob(root->tp, indexUse));
+                std::string indexUse = (root->tp->getSubject() == root->var)? "PSO" : "POS";
+                plan.pushJob(this->createSelectQueryJob(root->tp, indexUse), thread_no);
             } else {
                assert(false);
             }
             break;
         case JOIN:
-            plan.pushJob(new JoinQueryJob(plan.getJob(j1), plan.getJob(j2), root->var, 
-                context, &variables_bound, &empty_interval_dict, !root->reuseVar));
+            plan.pushJob(new JoinQueryJob(plan.getJob(j1, thread_no), plan.getJob(j2, thread_no), root->var, 
+                context, &variables_bound, &empty_interval_dict, !root->reuseVar), thread_no);
             break;
         case INDEXSWAP:
-            plan.pushJob(new IndexSwapJob(plan.getJob(j1), root->var, 
-                context, &empty_interval_dict));
+            plan.pushJob(new IndexSwapJob(plan.getJob(j1, thread_no), root->var, 
+                context, &empty_interval_dict), thread_no);
             break;
     }
     return jobCount++;
@@ -205,9 +204,64 @@ PlanTreeNode *createRandomPlan(SparqlQuery *sparqlQuery, int seed) {
 }
 
 int QueryExecutor::jobCount = 0;
-void QueryExecutor::createPlanExecFromPlanTree(QueryPlan &plan, PlanTreeNode* root) {
+void QueryExecutor::createPlanExecFromPlanTree(QueryPlan &plan, PlanTreeNode* root, size_t thread_no = 0) {
     jobCount = 0;
-    postorderTraversal(plan, root);
+    postorderTraversal(plan, root, thread_no);
+}
+
+std::string jobObToStr(PlanOperation op) {
+    switch (op) {
+        case UPLOAD: return "UPLOAD";
+        case JOIN: return "JOIN";
+        case INDEXSWAP: return "INDEX-SWAP";
+    }
+    return "";
+}
+
+void printBT(const std::string& prefix, const PlanTreeNode* node, bool isLeft) {
+    if (node != nullptr) {
+        std::cout << prefix;
+
+        std::cout << (isLeft ? "├──" : "└──" );
+
+        // print the value of the node
+        std::cout << jobObToStr(node->op) << "  " << node->debugName << '\n';
+
+        // enter the next tree level - left and right branch
+        printBT( prefix + (isLeft ? "│   " : "    "), node->child1, true);
+        printBT( prefix + (isLeft ? "│   " : "    "), node->child2, false);
+    }
+}
+
+void printBT(const PlanTreeNode* node) {
+    printBT("", node, false);
+}
+
+bool contains(std::vector<int>& v, int k) {
+    for (int e: v) 
+        if (e == k) return true; 
+    return false;
+}
+
+// remove duplicate value from a
+int removeDuplicate(std::vector<int>& a, std::vector<int> b) {
+    for (size_t i = 0; i < b.size(); ++i) {
+        if (contains(a, b[i])) {
+            a.erase(std::remove(a.begin(), a.end(), b[i]), a.end());
+            return b[i];
+        }
+    }
+}
+
+std::string findJoinVar(SparqlQuery &sparqlQuery, std::vector<int>& a, int removeIdx) {
+    for (size_t i = 0; i < a.size(); ++i) {
+        // sparqlQuery
+        TriplePattern *atp = sparqlQuery.getPatternPtr(a[i]);
+        TriplePattern *rtp = sparqlQuery.getPatternPtr(removeIdx);
+        std::string commonVar = atp->hasCommonVariable(*rtp);
+        if (commonVar != "") return commonVar;
+    }
+    return "";
 }
 
 void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) {
@@ -225,7 +279,7 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
         // TODO: projection, eliminate duplicate
         plan.pushJob(this->createSelectQueryJob(sparqlQuery.getPatternPtr(0)));
         plan.print();
-        plan.execute(sparqlResult);
+        plan.execute(sparqlResult, true /* single GPU */);
 
         return;
     }
@@ -234,21 +288,68 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
 #ifdef VERBOSE_DEBUG
     printBounds();
 #endif
-    // estimateRelationSize();
 
     // TODO: Get meta data
     auto planing2_start = std::chrono::high_resolution_clock::now();
-    
-    QueryGraph qg(&sparqlQuery); // Construct the query graph
-    PlanTreeNode* root = qg.generateQueryPlan();
-    createPlanExecFromPlanTree(plan, root);
 
-    // 1-100
-    // 2-300
-    // 3-500
-    // PlanTreeNode* root = createRandomPlan(&sparqlQuery, 100);
-    // PlanTreeNode::printBT(root);
-    // createPlanExecFromPlanTree(plan, root);
+    bool singleGPU = true;
+    if (sparqlQuery.getPatternNum() <= 4 || gpu_ids.size() < 2) {
+        // std::cout << "Use Single GPU\n";
+        singleGPU = true;
+        QueryGraph qg(&sparqlQuery, nullptr); // Construct the query graph
+        PlanTreeNode* root = qg.generateQueryPlan();
+        // printBT(root);
+        
+        createPlanExecFromPlanTree(plan, root);
+        
+        // 1-100
+        // 2-300
+        // 3-500
+        // PlanTreeNode* root = createRandomPlan(&sparqlQuery, 100);
+        // PlanTreeNode::printBT(root);
+        // createPlanExecFromPlanTree(plan, root);
+    } else {
+        // std::cout << "Use Multi-GPUs\n";
+        singleGPU = false;
+        std::vector<std::vector<int>> tpIds;
+        JoinGraph jg(&sparqlQuery);
+        std::cout << "Join Graph\n";
+        // jg.print();
+        jg.splitQuery(tpIds, 2);
+        std::map<int, int> tpGroupDict;
+        int toRemoveGroup;
+
+        int removeTpIdx;
+        if (tpIds[0].size() > tpIds[1].size()) {
+            removeTpIdx = removeDuplicate(tpIds[0], tpIds[1]);
+            toRemoveGroup = 0;
+        } else if (tpIds[0].size() < tpIds[1].size()) {
+            removeTpIdx = removeDuplicate(tpIds[1], tpIds[0]);
+            toRemoveGroup = 1;
+        } else {
+            // TODO: check cardinality
+            removeTpIdx = removeDuplicate(tpIds[1], tpIds[0]);
+            toRemoveGroup = 1;
+        }
+        
+        // std::cout << "Set 0 : "; for (auto i: tpIds[0]) std::cout << i << " "; std::cout << "\n";
+        // std::cout << "Set 1 : "; for (auto i: tpIds[1]) std::cout << i << " "; std::cout << "\n";
+
+        QueryGraph qg1(&sparqlQuery, &(tpIds[0]));
+        PlanTreeNode* root1 = qg1.generateQueryPlan();
+        QueryGraph qg2(&sparqlQuery, &(tpIds[1]));
+        PlanTreeNode* root2 = qg2.generateQueryPlan();
+        // printBT(root1);
+        // printBT(root2);
+        
+        createPlanExecFromPlanTree(plan, root1, 0);
+        createPlanExecFromPlanTree(plan, root2, 1);
+
+        // TODO: push last join job 
+        std::string cJoinVar = findJoinVar(sparqlQuery, tpIds[toRemoveGroup], removeTpIdx);
+        assert(cJoinVar != "");
+        plan.pushDynamicJob(new JoinQueryJob(nullptr, nullptr, cJoinVar, context, &variables_bound, &empty_interval_dict));
+    }
 
     auto planing_end = std::chrono::high_resolution_clock::now();
 #ifdef TIME_DEBUG
@@ -257,7 +358,7 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
 #endif
 
     // plan.print();
-    plan.execute(sparqlResult);
+    plan.execute(sparqlResult, singleGPU);
 #ifdef AUTO_PLANNER
     auto unixtime = std::chrono::system_clock::now();
     std::stringstream ss;
@@ -830,14 +931,13 @@ void QueryExecutor::initTime() {
     QueryExecutor::load_data_ms = 0.0;
     QueryExecutor::indexing_ms = 0.0;
     QueryExecutor::upload_ns = 0.0;
-    QueryExecutor::update_db_dict_ns = 0.0;
-    QueryExecutor::update_db_dict2_ns = 0.0;
     QueryExecutor::scan_to_split_ns = 0.0;
     QueryExecutor::prescan_extra_ns = 0.0;
     QueryExecutor::eif_ns = 0.0;
     QueryExecutor::join_ns = 0.0;
     QueryExecutor::alloc_copy_ns = 0.0;
     QueryExecutor::swap_index_ns = 0.0;
+    QueryExecutor::p2p_transfer_ns = 0.0;
     QueryExecutor::download_ns = 0.0;
     QueryExecutor::eliminate_duplicate_ns = 0.0;
     QueryExecutor::convert_to_id_ns = 0.0;

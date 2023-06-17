@@ -768,21 +768,26 @@ void FullRelationIR::movePeer(size_t src_device_id, size_t dest_device_id) {
     // Select destination device to work with
     cudaSetDevice(dest_device_id);
     std::vector<TYPEID_DEVICE_VEC*> tmpRelation(columnNum);
-    std::cout << "Move " << columnNum << " columns\n";
-    std::cout << "Transfer from " << src_device_id << " to " << dest_device_id << "\n";
+    // std::cout << "Move " << columnNum << " columns\n";
+    // std::cout << "Transfer from " << src_device_id << " to " << dest_device_id << "\n";
     for (size_t i = 0; i < columnNum; ++i) {
         tmpRelation[i] = new TYPEID_DEVICE_VEC(relationSize);
 
         TYPEID* dest_ptr = thrust::raw_pointer_cast(tmpRelation[i]->data());
         TYPEID* src_ptr = thrust::raw_pointer_cast(relation[i]->data());
+        cudaError_t result = cudaMemcpyPeer(dest_ptr, dest_device_id, src_ptr, src_device_id, relationSize * sizeof(TYPEID));
+        if (cudaSuccess != result) {
+            const char* errorString = cudaGetErrorString(result);
+            std::cout << "CUDA error: " << errorString << std::endl;
+        }
 
-        cudaMemcpyPeer(dest_ptr, dest_device_id, src_ptr, src_device_id, relationSize);
+        relation[i]->clear(); // deallocate 
         relation[i] = tmpRelation[i];
-        // TODO: deallocate src
     }
     std::cout << "Finish transfer\n";
 
     // TODO: remove test copy
+    // cudaSetDevice(dest_device_id);
     // std::cout << "After transfer device : " << dest_device_id << "\n";
     // for (size_t i = 0; i < columnNum; ++i) {
     //     thrust::host_vector<TYPEID> hh(copy_size);
@@ -793,14 +798,6 @@ void FullRelationIR::movePeer(size_t src_device_id, size_t dest_device_id) {
     //     }
     //     std::cout << "\n";
     // }
-}
-
-IndexIR* FullRelationIR::toIndexIR(std::string idx_var) {
-    // TODO: check index var is already sort
-
-
-    // TODO: Transformation implementation
-    return nullptr;
 }
 
 void FullRelationIR::print() const {

@@ -28,7 +28,7 @@ struct GraphEdge {
 
 class QueryGraph {
 public:
-    QueryGraph(SparqlQuery *sparqlQuery);
+    QueryGraph(SparqlQuery *sparqlQuery, std::vector<int>* selected = nullptr);
     PlanTreeNode* generateQueryPlan();
     void print() const;
 private:

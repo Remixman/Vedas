@@ -76,6 +76,17 @@ bool TriplePattern::hasVariable(std::string v) const {
     return false;
 }
 
+std::string TriplePattern::hasCommonVariable(const TriplePattern &tp) {
+    if (tp.subjectIsVariable() && this->hasVariable(tp.getSubject())) {
+        return tp.getSubject();
+    } else if (tp.objectIsVariable() && this->hasVariable(tp.getObject())) {
+        return tp.getObject();
+    } else if (tp.predicateIsVariable() && this->hasVariable(tp.getPredicate())) {
+        return tp.getPredicate();
+    }
+    return "";
+}
+
 void TriplePattern::print() const {
     if (isVar[0]) std::cout << subject << "[?] ";
     else std::cout << subject_id << " ";

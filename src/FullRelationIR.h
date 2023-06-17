@@ -3,10 +3,9 @@
 
 #include <vector>
 #include <unordered_map>
+#include <fstream>
 #include "vedas.h"
 #include "IR.h"
-
-class IndexIR; // To prevent circular definition
 
 class FullRelationIR : public IR
 {
@@ -35,7 +34,6 @@ public:
     void removeColumn(size_t i);
     void removeColumn(size_t i, std::string &maintain_var);
     void movePeer(size_t src_device_id, size_t dest_device_id);
-    IndexIR* toIndexIR(std::string idx_var);
     void print() const;
     void print(bool full_version, std::ostream& out) const;
     void print(REVERSE_DICTTYPE *r_so_map, REVERSE_DICTTYPE *r_p_map, REVERSE_DICTTYPE *r_l_map) const;

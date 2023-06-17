@@ -5,7 +5,6 @@
 #include "EmptyIntervalDict.h"
 #include "QueryJob.h"
 #include "IR.h"
-#include "IndexIR.h"
 #include "FullRelationIR.h"
 
 class IndexSwapJob : public QueryJob
@@ -14,7 +13,7 @@ public:
     IndexSwapJob(QueryJob *beforeJob, std::string swapVar, mgpu::standard_context_t* context, EmptyIntervalDict *ei_dict);
     ~IndexSwapJob() override;
     IR* getIR() override;
-    int startJob() override;
+    int startJob(int gpuId) override;
     void print() const override;
     std::string jobTypeName() const override;
 private:

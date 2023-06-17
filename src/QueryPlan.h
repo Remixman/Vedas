@@ -5,7 +5,6 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
-// #include "ctpl_stl.h"
 #include "QueryJob.h"
 #include "ExecutionWorker.h"
 #include "SelectQueryJob.h"
@@ -20,11 +19,11 @@ public:
     QueryPlan(ExecutionWorker *worker, std::set<std::string> &select_variable_set);
     ~QueryPlan();
     void pushJob(QueryJob *job, size_t thread_no = 0);
-    QueryJob* getJob(size_t i);
+    void pushDynamicJob(QueryJob *job);
+    QueryJob* getJob(size_t i, size_t thread_no = 0);
     void setJoinVariables(std::vector<std::string> variables);
 
-    size_t size() const;
-    void execute(SparqlResult &sparqlResult);
+    void execute(SparqlResult &sparqlResult, bool singleGPU);
     void print() const;
 private:
     // ctpl::thread_pool *threadPool;
@@ -33,10 +32,9 @@ private:
     std::vector<TriplePattern*> query_patterns;
     std::vector<std::string> join_variables;
 
-    std::vector<QueryJob*> job_queue;
-    std::vector<size_t> thread_no_queue;
+    std::vector<std::vector<QueryJob*>> job_queues;
+    std::vector<QueryJob*> dynamicQueue;
     std::vector<std::string> select_variables;
-    void plan();
 
     std::unordered_map<std::string, size_t> var_node_map;
     // std::unordered_map<SelectQueryJob*, size_t> select_node_map;
@@ -45,6 +43,9 @@ private:
 
     // For logging
     std::vector<unsigned int> join_sizes;
+
+    std::atomic<int> jobFinished;
+    std::atomic<int> transferFinished;
 };
 
 #endif // QUERYPLAN_H

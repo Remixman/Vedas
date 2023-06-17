@@ -8,7 +8,6 @@
 #include <unordered_set>
 #include <moderngpu/context.hxx>
 #include <moderngpu/memory.hxx>
-// #include "ctpl_stl.h"
 #include "vedas.h"
 #include "EmptyIntervalDict.h"
 #include "ExecutionWorker.h"
@@ -69,10 +68,9 @@ public:
     static double eliminate_duplicate_ns;
     static double convert_to_id_ns;
     static double convert_to_iri_ns;
-    static double update_db_dict_ns;
-    static double update_db_dict2_ns;
     static double scan_to_split_ns;
     static double prescan_extra_ns;
+    static double p2p_transfer_ns;
     static double eif_ns;
     static int eif_count;
     static std::vector<ExecuteLogRecord> exe_log;
@@ -115,8 +113,8 @@ private:
 
     void estimateRelationSize();
 
-    int postorderTraversal(QueryPlan &plan, PlanTreeNode* root);
-    void createPlanExecFromPlanTree(QueryPlan &plan, PlanTreeNode* root);
+    int postorderTraversal(QueryPlan &plan, PlanTreeNode* root, size_t thread_no);
+    void createPlanExecFromPlanTree(QueryPlan &plan, PlanTreeNode* root, size_t thread_no);
 
     SelectQueryJob* createSelectQueryJob(TriplePattern *pattern, std::string index_used = "", std::pair<TYPEID, TYPEID> *bound = nullptr);
     SelectQueryJob* create1VarSelectQueryJob(TriplePattern *pattern, std::string index_used = "", std::pair<TYPEID, TYPEID> *bound = nullptr);

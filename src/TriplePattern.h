@@ -21,6 +21,7 @@ class TriplePattern {
     bool predicateIsVariable() const;
     bool objectIsVariable() const;
     bool hasVariable(std::string v) const;
+    std::string hasCommonVariable(const TriplePattern &tp);
     void print() const;
     std::string toString() const;
 

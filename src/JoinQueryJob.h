@@ -5,7 +5,6 @@
 #include "EmptyIntervalDict.h"
 #include "QueryJob.h"
 #include "IR.h"
-#include "IndexIR.h"
 #include "FullRelationIR.h"
 
 class JoinQueryJob : public QueryJob
@@ -15,7 +14,7 @@ public:
                  std::map< std::string, std::pair<TYPEID, TYPEID> > *variables_bound, EmptyIntervalDict *ei_dict, bool lastJoinForVar = true);
     ~JoinQueryJob() override;
     IR* getIR() override;
-    int startJob() override;
+    int startJob(int gpuId) override;
     std::string jobTypeName() const override;
 
     void filterJoinedIndexVars(TYPEID *new_idx_vars, TYPEID *orig_idx_vars, int2* joined_idx, size_t joined_idx_size);
@@ -28,16 +27,16 @@ public:
 
     mgpu::mem_t<int2> innerJoinMulti(TYPEID* a, int a_count, TYPEID* b, int b_count);
 
+    void setOperands(QueryJob *leftJob, QueryJob *rightJob);
     IR* join(FullRelationIR *lir, FullRelationIR *rir);
-    IR* join(FullRelationIR *lir, IndexIR *rir);
-    IR* join(IndexIR *lir, IndexIR *rir);
-    IR* multiJoinIndexedIr(std::vector<IndexIR*> &irs);
     void print() const override;
     void setQueryVarCounter(std::map<std::string, size_t> *query_variable_counter);
     unsigned getLeftIRSize() const;
     unsigned getRightIRSize() const;
     std::string getJoinVariable() const;
     void mergeColumns(DTYPEID* irMergeRelation, FullRelationIR *ir, size_t col0, size_t col1);
+    std::map< std::string, std::pair<TYPEID, TYPEID> > *variables_bound{ nullptr };
+    EmptyIntervalDict *ei_dict{ nullptr };
 private:
     std::string joinVariable;
     mgpu::standard_context_t* context;
@@ -46,8 +45,6 @@ private:
     bool lastJoinForVar;
 
     std::map<std::string, size_t> *query_variable_counter;
-    std::map< std::string, std::pair<TYPEID, TYPEID> > *variables_bound{ nullptr };
-    EmptyIntervalDict *ei_dict{ nullptr };
 };
 
 #endif // JOINQUERYJOB_H

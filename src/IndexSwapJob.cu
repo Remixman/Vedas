@@ -22,7 +22,8 @@ IR* IndexSwapJob::getIR() {
     return this->intermediateResult;
 }
 
-int IndexSwapJob::startJob() {
+int IndexSwapJob::startJob(int gpuId) {
+    this->gpuId = gpuId;
     auto swap_index_start = std::chrono::high_resolution_clock::now();
     
     FullRelationIR *beforeIr = dynamic_cast<FullRelationIR *>(beforeJob->getIR());
@@ -31,7 +32,7 @@ int IndexSwapJob::startJob() {
     beforeIr->sortByFirstColumn();
     
     std::string varToSwap = beforeIr->getHeader(0) + " <-> " + beforeIr->getHeader(columnToSwap);
-    QueryExecutor::exe_log.push_back( ExecuteLogRecord(SWAP_OP, varToSwap, beforeIr->size(), beforeIr->getColumnNum()) );
+    QueryExecutor::exe_log.push_back( ExecuteLogRecord(gpuId, SWAP_OP, varToSwap, beforeIr->size(), beforeIr->getColumnNum()) );
     
     auto swap_index_end = std::chrono::high_resolution_clock::now();
     QueryExecutor::swap_index_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(swap_index_end-swap_index_start).count();

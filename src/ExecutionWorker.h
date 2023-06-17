@@ -6,29 +6,21 @@
 #include <thread>
 #include <functional>
 #include "vedas.h"
-#include "concurrentqueue.h"
+#include "BS_thread_pool.hpp"
 
 class ExecutionWorker {
 public:
-  ExecutionWorker(const std::vector<int>& gpu_ids);
+  ExecutionWorker(std::vector<int>& gpu_ids);
   ~ExecutionWorker();
 
-  bool pushTask(size_t threadNo, std::function<int(void)> f);
+  BS::thread_pool *getPool();
   std::vector<int> getGpuIds() const;
+  int getGpuId(int i) const;
   size_t size() const;
-
-  int sendData(int from, int to, int data);
-  int receiveData(int from, int to);
-
 private:
   int gpu_num;
   std::vector<int> gpu_ids;
-  std::vector<std::thread> threads;
-  std::vector<std::vector<std::promise<int>>> promises;
-  std::vector<std::vector<std::future<int>>> futures;
-  std::vector<moodycamel::ConcurrentQueue<std::function<int(void)>>> work_queues;
-  int waitAll();
-  // int wait(size_t thread_no);
+  BS::thread_pool *pool = nullptr;
 
   void initialize(int gpu_num);
 };
