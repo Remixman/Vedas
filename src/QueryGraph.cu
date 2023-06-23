@@ -56,16 +56,9 @@ QueryGraph::QueryGraph(SparqlQuery *sparqlQuery, std::vector<int>* selected) {
         edgeData->tp = tp;
         edgeData->estimateCardinality = tp->estimate_rows * tp->getVariableNum();
         // std::cout << "\tTP : " << tp->toString() << " : " << tp->estimate_rows << " rows\n";
-        // std::cout << " add edge " <<  subject << ' ' << object << '\n';
         this->addEdge(subject, object, edgeData);
     }
-    /*std::set<std::string> joinVariables;
-
-    variables = sparqlQuery->getVariables();
-    for (unsigned i = 0; i < variables.size(); i++) {
-        unsigned long long ull = 1;
-        varBitDict[variables[i]] = (ull << i);
-    }*/
+    /// std::set<std::string> joinVariables;
 }
 
 PlanTreeNode* QueryGraph::generateQueryPlan() {
@@ -237,8 +230,8 @@ PlanTreeNode* QueryGraph::generateJoinPlanForNode(const std::string vertex, cons
     for (size_t i = firstIndex; i < adjList.size(); ++i) {
         if (!adjList[i].second->hasVariable(joinVar)) continue;
     
-      // data still on main memory, upload to GPU memory
-    //   std::cout << "   (" << vertex << "," << adjList[i].first << ") ^ Est.Card. : " 
+        // data still on main memory, upload to GPU memory
+        //   std::cout << "   (" << vertex << "," << adjList[i].first << ") ^ Est.Card. : " 
         //   << adjList[i].second->estimateCardinality << "\n";
         if (!adjList[i].second->treeNode) {
             adjList[i].second->treeNode = createUploadJobNode(adjList[i].second->tmpTriple, adjList[i].second->tp, indexVar);

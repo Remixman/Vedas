@@ -23,7 +23,7 @@ public:
     QueryJob* getJob(size_t i, size_t thread_no = 0);
     void setJoinVariables(std::vector<std::string> variables);
 
-    void execute(SparqlResult &sparqlResult, bool singleGPU);
+    void execute(SparqlResult &sparqlResult, int processGpuCount);
     void print() const;
 private:
     // ctpl::thread_pool *threadPool;

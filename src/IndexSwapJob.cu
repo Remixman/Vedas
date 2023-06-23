@@ -7,10 +7,13 @@
 #include "IndexSwapJob.h"
 
 IndexSwapJob::IndexSwapJob(QueryJob *beforeJob, std::string swapVar, 
-                            mgpu::standard_context_t* context, EmptyIntervalDict *ei_dict) {
+                            mgpu::standard_context_t* context, \
+                            std::map< std::string, std::pair<TYPEID, TYPEID> > *variables_bound,
+                            EmptyIntervalDict *ei_dict) {
     this->beforeJob = beforeJob;
     this->swapVar = swapVar;
     this->context = context;
+    this->variables_bound = variables_bound;
     this->ei_dict = ei_dict;
 }
 
@@ -37,6 +40,16 @@ int IndexSwapJob::startJob(int gpuId) {
     auto swap_index_end = std::chrono::high_resolution_clock::now();
     QueryExecutor::swap_index_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(swap_index_end-swap_index_start).count();
     
+    // Update Bound
+    // if (beforeIr->size() > 0) {
+        // auto copy_start = std::chrono::high_resolution_clock::now();
+        // TYPEID start_value = (*beforeIr->getRelation(0))[0];
+        // TYPEID end_value = (*beforeIr->getRelation(0))[beforeIr->size()-1];
+        // auto copy_end = std::chrono::high_resolution_clock::now();
+        // QueryExecutor::updateBoundDict(variables_bound, varToSwap, start_value, end_value);
+    // }
+
+    // Update EIF
     if (beforeIr->size() > 2 && beforeIr->size() < EIF_ALPHA) {
         auto eif_start = std::chrono::high_resolution_clock::now();
         TYPEID_DEVICE_VEC diff_vec(beforeIr->size() - 1);
@@ -77,7 +90,6 @@ int IndexSwapJob::startJob(int gpuId) {
     }
     
     this->intermediateResult = beforeIr;
-    
 
     return 0; // TODO: -1 if error
 }

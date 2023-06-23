@@ -115,6 +115,8 @@ private:
 
     int postorderTraversal(QueryPlan &plan, PlanTreeNode* root, size_t thread_no);
     void createPlanExecFromPlanTree(QueryPlan &plan, PlanTreeNode* root, size_t thread_no);
+    void createStarJoinPlan(QueryPlan &plan, std::vector<TriplePattern> *tps, 
+                            std::vector<size_t> &ids, std::string joinVar, size_t thread_no);
 
     SelectQueryJob* createSelectQueryJob(TriplePattern *pattern, std::string index_used = "", std::pair<TYPEID, TYPEID> *bound = nullptr);
     SelectQueryJob* create1VarSelectQueryJob(TriplePattern *pattern, std::string index_used = "", std::pair<TYPEID, TYPEID> *bound = nullptr);

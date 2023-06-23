@@ -30,6 +30,7 @@ JoinQueryJob::JoinQueryJob(QueryJob *leftJob, QueryJob *rightJob, std::string jo
     this->context = context;
     this->variables_bound = variables_bound;
     this->ei_dict = ei_dict;
+    this->lastJoinForVar = lastJoinForVar;
 }
 
 JoinQueryJob::~JoinQueryJob() {

@@ -98,7 +98,6 @@ int SelectQueryJob::startJob(int gpuId) {
         // select from first and second indices
         size_t relationNum = data_offst_pair.second - data_offst_pair.first; // XXX: not plus 1, end iterator is exclusive
         FullRelationIR *fullIr = new FullRelationIR(1 /*columnNum*/, relationNum);
-        QueryExecutor::exe_log.push_back( ExecuteLogRecord(gpuId, UPLOAD_OP, fullIr->getHeaders(""), relationNum, 1) );
 
         // Upload data to intermediate IR
         fullIr->setHeader(0, variables[0], is_predicates[0]);
@@ -109,6 +108,8 @@ int SelectQueryJob::startJob(int gpuId) {
             fullIr->setRelation(0, data->begin() + data_offst_pair.first, data->begin() + data_offst_pair.second);
         auto upload_end = std::chrono::high_resolution_clock::now();
         QueryExecutor::upload_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(upload_end-upload_start).count();
+        
+        QueryExecutor::exe_log.push_back( ExecuteLogRecord(gpuId, UPLOAD_OP, fullIr->getHeaders(""), relationNum, 1) );
 
         // Tighten bound
         if (variables_bound != nullptr && variables_bound->count(this->variables[0]) > 0) {

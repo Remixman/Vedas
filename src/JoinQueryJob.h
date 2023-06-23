@@ -42,7 +42,7 @@ private:
     mgpu::standard_context_t* context;
     QueryJob *leftJob { nullptr };
     QueryJob *rightJob { nullptr };
-    bool lastJoinForVar;
+    bool lastJoinForVar = false;
 
     std::map<std::string, size_t> *query_variable_counter;
 };

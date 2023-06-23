@@ -768,8 +768,6 @@ void FullRelationIR::movePeer(size_t src_device_id, size_t dest_device_id) {
     // Select destination device to work with
     cudaSetDevice(dest_device_id);
     std::vector<TYPEID_DEVICE_VEC*> tmpRelation(columnNum);
-    // std::cout << "Move " << columnNum << " columns\n";
-    // std::cout << "Transfer from " << src_device_id << " to " << dest_device_id << "\n";
     for (size_t i = 0; i < columnNum; ++i) {
         tmpRelation[i] = new TYPEID_DEVICE_VEC(relationSize);
 
@@ -784,7 +782,7 @@ void FullRelationIR::movePeer(size_t src_device_id, size_t dest_device_id) {
         relation[i]->clear(); // deallocate 
         relation[i] = tmpRelation[i];
     }
-    std::cout << "Finish transfer\n";
+    // std::cout << "Finish transfer\n";
 
     // TODO: remove test copy
     // cudaSetDevice(dest_device_id);

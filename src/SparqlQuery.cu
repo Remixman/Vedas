@@ -65,8 +65,13 @@ SparqlQuery::SparqlQuery(const char *q, DICTTYPE &so_map, DICTTYPE &p_map, DICTT
         std::cout << "PARSED PATTERN ( " << subject << " , " << predicate << " , " << object << " )\n";
 #endif
         std::string query_name = "q" + std::to_string(triple_idx);
-        TriplePattern pattern(triple_idx, query_name, subject, predicate, object, so_map, p_map, l_map);
-        this->patterns.push_back(pattern);
+        TriplePattern tp(triple_idx, query_name, subject, predicate, object, so_map, p_map, l_map);
+        
+        if (tp.subjectIsVariable()) vars_count[tp.getSubject()] += 1;
+        if (tp.predicateIsVariable()) vars_count[tp.getPredicate()] += 1;
+        if (tp.objectIsVariable()) vars_count[tp.getObject()] += 1;
+        
+        this->patterns.push_back(tp);
 
         triple_idx++;
     }
@@ -80,21 +85,74 @@ SparqlQuery::SparqlQuery(const char *q, DICTTYPE &so_map, DICTTYPE &p_map, DICTT
         std::cout << "SELECT VARIABLE : " << vs << "\n";
 #endif
     }
+    
+    // Check graph shape
+    std::multiset<int, std::greater<int> > degrees;
+    std::string varWithMaxCount = "";
+    for (std::pair<std::string, int> vc: vars_count) {
+        degrees.insert(vc.second);
+        if (vc.second > this->maxVarCount) {
+            this->maxVarCount = vc.second;
+            varWithMaxCount = vc.first;
+        }
+    }
+    // maxVarCount is degree. If one of them has degree N, this query is star-shaped
+    if (this->maxVarCount == patterns.size()) {
+        this->starShaped = true;
+        this->starCenterVar = varWithMaxCount;
+    }
+    if (this->maxVarCount <= 2) {
+        this->linearShaped = true;
+    }
+    if (patterns.size() >= 4 && this->maxVarCount >= 3 && !this->starShaped) {
+        degrees.erase(degrees.begin()); // Remove largest value
+        bool allEte2 = std::all_of(degrees.begin(), degrees.end(), [](int element) {
+            return element <= 2;
+        });
+        if (allEte2) {
+            this->starBasedShaped = true;
+            this->starCenterVar = varWithMaxCount;
+        }
+    }
 
     rasqal_free_query(rq);
     raptor_free_uri(base_uri);
     rasqal_free_world(world);
 }
 
-SparqlQuery::SparqlQuery(std::vector<TriplePattern> &patterns, std::vector<std::string> &variables) {
-    this->variables = variables;
-    this->patterns = patterns;
+// SparqlQuery::SparqlQuery(std::vector<TriplePattern> &patterns, std::vector<std::string> &variables) {
+//     this->variables = variables;
+//     this->patterns = patterns;
+// }
+
+bool compareTriplaPatternCardinality(TriplePattern &tp1, TriplePattern &tp2) {
+    return tp1.estimate_rows < tp2.estimate_rows;
+}
+
+void SparqlQuery::splitStarQuery(int expectGpuNum, std::vector<std::vector<size_t>>& groups) {
+    std::vector<TriplePattern> triplePatterns = patterns;
+    std::sort(triplePatterns.begin(), triplePatterns.end(), compareTriplaPatternCardinality);
+    
+    groups.resize(expectGpuNum);
+    for (int i = 0; i < triplePatterns.size(); ++i) {
+        std::cout << "[_] " << triplePatterns[i].estimate_rows << "\n";
+        groups[i % expectGpuNum].push_back(triplePatterns[i].getId());
+        // if (i == 0) {
+        //     groups[(i % expectGpuNum) + 1].push_back(triplePatterns[i].getId());
+        // }
+    }
 }
 
 std::vector<TriplePattern> SparqlQuery::getPatterns() { return this->patterns; }
+std::vector<TriplePattern> * SparqlQuery::getPatternsPtr() { return &(this->patterns); }
 TriplePattern SparqlQuery::getPattern(size_t i) { return this->patterns[i]; }
 TriplePattern *SparqlQuery::getPatternPtr(size_t i) { return &(this->patterns[i]); }
 size_t SparqlQuery::getPatternNum() const { return this->patterns.size(); }
+std::map<std::string, int> & SparqlQuery::getVarCountMap() { return this->vars_count; }
+bool SparqlQuery::isStarShaped() const { return this->starShaped; }
+bool SparqlQuery::isStarBasedShaped() const { return this->starBasedShaped; }
+bool SparqlQuery::isLinearShaped() const { return this->linearShaped; }
+std::string SparqlQuery::getStarCenterVariable() const { return this->starCenterVar; }
 
 std::vector<std::string> SparqlQuery::getVariables() const {
     return this->variables;

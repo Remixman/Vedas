@@ -435,7 +435,7 @@ void VedasStorage::printOPSIndex() const {
 void VedasStorage::uploadData() {
     if (!preload) return;
 
-    size_t data_size = spo_data.size();
+    size_t data_size = pso_data.size();
     d_pso_data.resize(data_size);
     d_pos_data.resize(data_size);
     

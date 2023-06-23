@@ -129,10 +129,38 @@ int QueryExecutor::postorderTraversal(QueryPlan &plan, PlanTreeNode* root, size_
             break;
         case INDEXSWAP:
             plan.pushJob(new IndexSwapJob(plan.getJob(j1, thread_no), root->var, 
-                context, &empty_interval_dict), thread_no);
+                context, &variables_bound, &empty_interval_dict), thread_no);
             break;
     }
     return jobCount++;
+}
+
+void QueryExecutor::createStarJoinPlan(QueryPlan &plan, std::vector<TriplePattern> *tps, std::vector<size_t> &ids, 
+                                        std::string joinVar, size_t thread_no) {
+    TriplePattern &tp = tps->at(ids[0]);
+    if (tp.getVariableNum() == 1) {
+        plan.pushJob(this->createSelectQueryJob(&tp), thread_no);
+    } else if (tp.getVariableNum() == 2) {
+        std::string indexUse = (tp.getSubject() == joinVar)? "PSO" : "POS";
+        plan.pushJob(this->createSelectQueryJob(&tp, indexUse), thread_no);
+    } else {
+        assert(false);
+    }
+
+    for (int i = 1; i < ids.size(); ++i) {
+        TriplePattern &tp = tps->at(ids[i]);
+        if (tp.getVariableNum() == 1) {
+            plan.pushJob(this->createSelectQueryJob(&tp), thread_no);
+        } else if (tp.getVariableNum() == 2) {
+            std::string indexUse = (tp.getSubject() == joinVar)? "PSO" : "POS";
+            plan.pushJob(this->createSelectQueryJob(&tp, indexUse), thread_no);
+        } else {
+           assert(false);
+        }
+        bool lastJoinForVar = false; // TODO: should be last for reduce EIF
+        plan.pushJob(new JoinQueryJob(plan.getJob(i*2-2, thread_no), plan.getJob(i*2-1, thread_no), joinVar,
+                context, &variables_bound, &empty_interval_dict, lastJoinForVar), thread_no);
+    }
 }
 
 PlanTreeNode *createRandomPlan(SparqlQuery *sparqlQuery, int seed) {
@@ -292,10 +320,9 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
     // TODO: Get meta data
     auto planing2_start = std::chrono::high_resolution_clock::now();
 
-    bool singleGPU = true;
+    int processGpuCount = 1;
     if (sparqlQuery.getPatternNum() <= 4 || gpu_ids.size() < 2) {
         // std::cout << "Use Single GPU\n";
-        singleGPU = true;
         QueryGraph qg(&sparqlQuery, nullptr); // Construct the query graph
         PlanTreeNode* root = qg.generateQueryPlan();
         // printBT(root);
@@ -310,45 +337,66 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
         // createPlanExecFromPlanTree(plan, root);
     } else {
         // std::cout << "Use Multi-GPUs\n";
-        singleGPU = false;
-        std::vector<std::vector<int>> tpIds;
-        JoinGraph jg(&sparqlQuery);
-        std::cout << "Join Graph\n";
-        // jg.print();
-        jg.splitQuery(tpIds, 2);
-        std::map<int, int> tpGroupDict;
-        int toRemoveGroup;
-
-        int removeTpIdx;
-        if (tpIds[0].size() > tpIds[1].size()) {
-            removeTpIdx = removeDuplicate(tpIds[0], tpIds[1]);
-            toRemoveGroup = 0;
-        } else if (tpIds[0].size() < tpIds[1].size()) {
-            removeTpIdx = removeDuplicate(tpIds[1], tpIds[0]);
-            toRemoveGroup = 1;
+        
+        if (sparqlQuery.isStarShaped()) {
+            processGpuCount = 2;
+            
+            // floor(tripleNum/4.0)
+            std::vector<std::vector<size_t>> groups;
+            std::string cJoinVar = sparqlQuery.getStarCenterVariable();
+            sparqlQuery.splitStarQuery(processGpuCount, groups);
+            for (int gi = 0; gi < groups.size(); ++gi) {
+                int thread_no = gi;
+                createStarJoinPlan(plan, sparqlQuery.getPatternsPtr(), 
+                                    groups[gi], cJoinVar, thread_no);
+            }
+            
+            // push last dynamic join job 
+            plan.pushDynamicJob(new JoinQueryJob(nullptr, nullptr, cJoinVar, context, &variables_bound, &empty_interval_dict));
+            
         } else {
-            // TODO: check cardinality
-            removeTpIdx = removeDuplicate(tpIds[1], tpIds[0]);
-            toRemoveGroup = 1;
+            processGpuCount = 2;
+            std::vector<std::vector<int>> tpIds;
+            JoinGraph jg(&sparqlQuery);
+            std::cout << "Join Graph\n";
+            // jg.print();
+            jg.splitQuery(tpIds, 2);
+            std::map<int, int> tpGroupDict;
+            int toRemoveGroup;
+
+            int removeTpIdx;
+            if (tpIds[0].size() > tpIds[1].size()) {
+                removeTpIdx = removeDuplicate(tpIds[0], tpIds[1]);
+                toRemoveGroup = 0;
+            } else if (tpIds[0].size() < tpIds[1].size()) {
+                removeTpIdx = removeDuplicate(tpIds[1], tpIds[0]);
+                toRemoveGroup = 1;
+            } else {
+                // TODO: check cardinality
+                removeTpIdx = removeDuplicate(tpIds[1], tpIds[0]);
+                toRemoveGroup = 1;
+            }
+            
+            // std::cout << "Set 0 : "; for (auto i: tpIds[0]) std::cout << i << " "; std::cout << "\n";
+            // std::cout << "Set 1 : "; for (auto i: tpIds[1]) std::cout << i << " "; std::cout << "\n";
+
+            QueryGraph qg1(&sparqlQuery, &(tpIds[0]));
+            PlanTreeNode* root1 = qg1.generateQueryPlan();
+            QueryGraph qg2(&sparqlQuery, &(tpIds[1]));
+            PlanTreeNode* root2 = qg2.generateQueryPlan();
+            // printBT(root1);
+            // printBT(root2);
+            
+            createPlanExecFromPlanTree(plan, root1, 0);
+            createPlanExecFromPlanTree(plan, root2, 1);
+
+            // TODO: push last join job 
+            std::string cJoinVar = findJoinVar(sparqlQuery, tpIds[toRemoveGroup], removeTpIdx);
+            assert(cJoinVar != "");
+            plan.pushDynamicJob(new JoinQueryJob(nullptr, nullptr, cJoinVar, context, &variables_bound, &empty_interval_dict));
         }
         
-        // std::cout << "Set 0 : "; for (auto i: tpIds[0]) std::cout << i << " "; std::cout << "\n";
-        // std::cout << "Set 1 : "; for (auto i: tpIds[1]) std::cout << i << " "; std::cout << "\n";
-
-        QueryGraph qg1(&sparqlQuery, &(tpIds[0]));
-        PlanTreeNode* root1 = qg1.generateQueryPlan();
-        QueryGraph qg2(&sparqlQuery, &(tpIds[1]));
-        PlanTreeNode* root2 = qg2.generateQueryPlan();
-        // printBT(root1);
-        // printBT(root2);
         
-        createPlanExecFromPlanTree(plan, root1, 0);
-        createPlanExecFromPlanTree(plan, root2, 1);
-
-        // TODO: push last join job 
-        std::string cJoinVar = findJoinVar(sparqlQuery, tpIds[toRemoveGroup], removeTpIdx);
-        assert(cJoinVar != "");
-        plan.pushDynamicJob(new JoinQueryJob(nullptr, nullptr, cJoinVar, context, &variables_bound, &empty_interval_dict));
     }
 
     auto planing_end = std::chrono::high_resolution_clock::now();
@@ -357,8 +405,9 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
     std::cout << "Real Planing time : " << std::setprecision(3) << std::chrono::duration_cast<std::chrono::milliseconds>(planing_end-planing2_start).count() << " ms.\n";
 #endif
 
+    // std::cout << "processGpuCount : " << processGpuCount << "\n";
     // plan.print();
-    plan.execute(sparqlResult, singleGPU);
+    plan.execute(sparqlResult, processGpuCount);
 #ifdef AUTO_PLANNER
     auto unixtime = std::chrono::system_clock::now();
     std::stringstream ss;
@@ -385,13 +434,7 @@ void QueryExecutor::createVariableBound(SparqlQuery &sparqlQuery) {
     join_vars.clear();
 
     // 1. Find join variables
-    std::map<std::string, int> vars_count;
-    for (size_t i = 0; i < sparqlQuery.getPatternNum(); ++i) {
-        TriplePattern *tp = sparqlQuery.getPatternPtr(i);
-        if (tp->subjectIsVariable()) vars_count[tp->getSubject()] += 1;
-        if (tp->predicateIsVariable()) vars_count[tp->getPredicate()] += 1;
-        if (tp->objectIsVariable()) vars_count[tp->getObject()] += 1;
-    }
+    std::map<std::string, int>& vars_count = sparqlQuery.getVarCountMap();
     for (auto &c : vars_count) {
         if (c.second > 1) {
 #ifdef VERBOSE_DEBUG

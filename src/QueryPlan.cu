@@ -60,13 +60,13 @@ void QueryPlan::setJoinVariables(std::vector<std::string> variables) {
     this->join_variables = variables;
 }
 
-void QueryPlan::execute(SparqlResult &sparqlResult, bool singleGPU) {
+void QueryPlan::execute(SparqlResult &sparqlResult, int processGpuCount) {
 
     for (std::string selVar : select_variables) {
         this->query_variable_counter[selVar] = ULONG_MAX;
     }
 
-    if (!singleGPU && worker->size() > 1) {
+    if (processGpuCount > 1 && worker->size() > 1) {
         jobFinished = 0;
         transferFinished = 0;
 
