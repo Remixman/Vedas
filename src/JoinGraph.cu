@@ -132,23 +132,20 @@ void JoinGraph::splitQuery(std::vector<std::vector<int>>& tpIds, int componentCo
         }
         assert(activeLinkCount % 2 == 0);
         coveredJoinCount += (activeLinkCount / 2);
-        // std::cout << "coveredJoinCount : " << coveredJoinCount <<  " , edgeCount : " << edgeCount <<'\n';
 
         sgd[si].activeVertices = newActives;
         for (auto v: newActives) sgd[si].vertices.insert(v);
         
         si++; if (si >= seeds.size()) si = 0;
-        
-        // int hh; std::cin >> hh;
     }
     
     for (int i = 0; i < seeds.size(); ++i) {
-        std::cout << "Set " << i << "\n\t";
+        // std::cout << "Set " << i << "\n\t";
         for (auto v: sgd[i].vertices) {
             tpIds[i].push_back(v);
-            std::cout << v << ' ';
+            // std::cout << v << ' ';
         }
-        std::cout << '\n';
+        // std::cout << '\n';
     }
 }
 
@@ -180,7 +177,7 @@ void JoinGraph::bfs(int root, std::vector<int> & dists) {
 }
 
 void JoinGraph::print() const {
-    std::cout << "Query Graph\n";
+    std::cout << "Variable Graph\n";
     for (int i = 0; i < adjacencyList.size(); ++i) {
         std::cout << '\t' << i << " => ";
         for (auto destNode: adjacencyList[i]) {

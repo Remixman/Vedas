@@ -321,7 +321,7 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
     auto planing2_start = std::chrono::high_resolution_clock::now();
 
     int processGpuCount = 1;
-    if (sparqlQuery.getPatternNum() <= 4 || gpu_ids.size() < 2) {
+    if (sparqlQuery.getPatternNum() < 4 || gpu_ids.size() < 2) {
         // std::cout << "Use Single GPU\n";
         QueryGraph qg(&sparqlQuery, nullptr); // Construct the query graph
         PlanTreeNode* root = qg.generateQueryPlan();
@@ -337,6 +337,7 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
         // createPlanExecFromPlanTree(plan, root);
     } else {
         // std::cout << "Use Multi-GPUs\n";
+        // sparqlQuery.printShape();
         
         if (sparqlQuery.isStarShaped()) {
             processGpuCount = 2;
@@ -354,13 +355,26 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
             // push last dynamic join job 
             plan.pushDynamicJob(new JoinQueryJob(nullptr, nullptr, cJoinVar, context, &variables_bound, &empty_interval_dict));
             
+        } else if (sparqlQuery.isSnowflakeShaped()) {
+            processGpuCount = 2;
+            std::string groupJoinVar;
+            std::vector<std::string> centers = sparqlQuery.getStarCenters();
+            std::vector<std::vector<size_t>> groups;
+            sparqlQuery.splitSnowflakeQuery(processGpuCount, groups, groupJoinVar);
+            for (int gi = 0; gi < groups.size(); ++gi) {
+                int thread_no = gi;
+                createStarJoinPlan(plan, sparqlQuery.getPatternsPtr(), 
+                                    groups[gi], centers[gi], thread_no);
+            }
+            
+            // push last dynamic join job 
+            plan.pushDynamicJob(new JoinQueryJob(nullptr, nullptr, groupJoinVar, context, &variables_bound, &empty_interval_dict));
         } else {
             processGpuCount = 2;
             std::vector<std::vector<int>> tpIds;
-            JoinGraph jg(&sparqlQuery);
-            std::cout << "Join Graph\n";
-            // jg.print();
-            jg.splitQuery(tpIds, 2);
+            JoinGraph vg(&sparqlQuery);
+            // vg.print();
+            vg.splitQuery(tpIds, 2);
             std::map<int, int> tpGroupDict;
             int toRemoveGroup;
 
@@ -395,8 +409,6 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
             assert(cJoinVar != "");
             plan.pushDynamicJob(new JoinQueryJob(nullptr, nullptr, cJoinVar, context, &variables_bound, &empty_interval_dict));
         }
-        
-        
     }
 
     auto planing_end = std::chrono::high_resolution_clock::now();

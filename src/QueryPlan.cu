@@ -92,8 +92,8 @@ void QueryPlan::execute(SparqlResult &sparqlResult, int processGpuCount) {
                 auto jobs_end = std::chrono::high_resolution_clock::now();
                 auto jobtime = std::chrono::duration_cast<std::chrono::nanoseconds>(jobs_end-jobs_start).count();
                 
-                std::cout << "Thread " << this_id << " execute time : " << std::setprecision(3) << jobtime / 1e6 << " ms. ("
-                << std::setprecision(8) << jobtime << " ns.)\n";
+                // std::cout << "Thread " << this_id << " execute time : " << std::setprecision(3) << jobtime / 1e6 << " ms. ("
+                // << std::setprecision(8) << jobtime << " ns.)\n";
                 
                 // TODO: for job in dynamic queue
                 for (size_t d = 0; d < dynamicQueue.size(); ++d) {
@@ -122,8 +122,8 @@ void QueryPlan::execute(SparqlResult &sparqlResult, int processGpuCount) {
                     while (transferFinished == 0); // wait for transfer finish
                     auto wait_end = std::chrono::high_resolution_clock::now();
                     auto wait_time = std::chrono::duration_cast<std::chrono::nanoseconds>(wait_end-wait_start).count();
-                    std::cout << "Thread " << this_id << " wait time : " << std::setprecision(3) << wait_time / 1e6 << " ms. ("
-                            << std::setprecision(8) << wait_time << " ns.)\n";
+                    // std::cout << "Thread " << this_id << " wait time : " << std::setprecision(3) << wait_time / 1e6 << " ms. ("
+                            // << std::setprecision(8) << wait_time << " ns.)\n";
 
                     if (t + 1 == transferFinished) {
                         // TODO: last join

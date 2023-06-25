@@ -24,18 +24,26 @@ public:
     bool isStarShaped() const;
     bool isStarBasedShaped() const;
     bool isLinearShaped() const;
+    bool isSnowflakeShaped() const;
     std::string getStarCenterVariable() const;
+    std::vector<std::string> getStarCenters() const;
     void splitStarQuery(int expectGpuNum, std::vector<std::vector<size_t>>& groups);
+    void splitSnowflakeQuery(int expectGpuNum, std::vector<std::vector<size_t>>& groups, std::string& groupJoinVar);
+    void printShape() const;
     void print() const;
+    int boundedNum = 0;
 private:
     std::vector<TriplePattern> patterns;
     std::vector<std::string> variables;
     std::set<std::string> selected_variables;
     std::map<std::string, int> vars_count;
+    std::vector<std::string> star_centers;
     int maxVarCount = 0;
+    int starCount = 0; // for snowflake
     bool linearShaped = false;
     bool starShaped = false;
     bool starBasedShaped = false;
+    bool snowflakeShaped = false;
     std::string starCenterVar = "";
 };
 

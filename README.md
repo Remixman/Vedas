@@ -63,3 +63,14 @@ The output file *triple-data.graphml* can opened with any supported software e.g
   url={https://doi.org/10.1186/s40537-021-00513-y}
 }
 ```
+```
+@article{makpisit2023sparql,
+  title={SPARQL Query Optimizations for GPU RDF Stores},
+  author={Makpisit, Pisit and others},
+  journal={ECTI Transactions on Computer and Information Technology (ECTI-CIT)},
+  volume={17},
+  number={2},
+  pages={235--244},
+  year={2023}
+}
+```
