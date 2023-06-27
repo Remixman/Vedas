@@ -352,7 +352,7 @@ void FullRelationIR::removeDuplicate() {
                 ADD_TO_TUPLE(1, begin_tuple, end_tuple, relation);
                 auto zip_begin = thrust::make_zip_iterator(begin_tuple);
                 auto zip_end = thrust::make_zip_iterator(end_tuple);
-                thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col2());
+                // thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col2());
                 auto new_end = thrust::unique(zip_begin, zip_end);
                 auto it_end_tuple = new_end.get_iterator_tuple();
                 relation[0]->erase(thrust::get<0>(it_end_tuple), relation[0]->end());
@@ -367,7 +367,7 @@ void FullRelationIR::removeDuplicate() {
                 ADD_TO_TUPLE(2, begin_tuple, end_tuple, relation);
                 auto zip_begin = thrust::make_zip_iterator(begin_tuple);
                 auto zip_end = thrust::make_zip_iterator(end_tuple);
-                thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col3());
+                // thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col3());
                 auto new_end = thrust::unique(zip_begin, zip_end);
                 auto it_end_tuple = new_end.get_iterator_tuple();
                 relation[0]->erase(thrust::get<0>(it_end_tuple), relation[0]->end());
@@ -384,7 +384,7 @@ void FullRelationIR::removeDuplicate() {
                 ADD_TO_TUPLE(3, begin_tuple, end_tuple, relation);
                 auto zip_begin = thrust::make_zip_iterator(begin_tuple);
                 auto zip_end = thrust::make_zip_iterator(end_tuple);
-                thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col4());
+                // thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col4());
                 auto new_end = thrust::unique(zip_begin, zip_end);
                 auto it_end_tuple = new_end.get_iterator_tuple();
                 relation[0]->erase(thrust::get<0>(it_end_tuple), relation[0]->end());
@@ -403,7 +403,7 @@ void FullRelationIR::removeDuplicate() {
                 ADD_TO_TUPLE(4, begin_tuple, end_tuple, relation);
                 auto zip_begin = thrust::make_zip_iterator(begin_tuple);
                 auto zip_end = thrust::make_zip_iterator(end_tuple);
-                thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col5());
+                // thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col5());
                 auto new_end = thrust::unique(zip_begin, zip_end);
                 auto it_end_tuple = new_end.get_iterator_tuple();
                 relation[0]->erase(thrust::get<0>(it_end_tuple), relation[0]->end());
@@ -424,7 +424,7 @@ void FullRelationIR::removeDuplicate() {
                 ADD_TO_TUPLE(5, begin_tuple, end_tuple, relation);
                 auto zip_begin = thrust::make_zip_iterator(begin_tuple);
                 auto zip_end = thrust::make_zip_iterator(end_tuple);
-                thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col6());
+                // thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col6());
                 auto new_end = thrust::unique(zip_begin, zip_end);
                 auto it_end_tuple = new_end.get_iterator_tuple();
                 relation[0]->erase(thrust::get<0>(it_end_tuple), relation[0]->end());
@@ -447,7 +447,7 @@ void FullRelationIR::removeDuplicate() {
                 ADD_TO_TUPLE(6, begin_tuple, end_tuple, relation);
                 auto zip_begin = thrust::make_zip_iterator(begin_tuple);
                 auto zip_end = thrust::make_zip_iterator(end_tuple);
-                thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col7());
+                // thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col7());
                 auto new_end = thrust::unique(zip_begin, zip_end);
                 auto it_end_tuple = new_end.get_iterator_tuple();
                 relation[0]->erase(thrust::get<0>(it_end_tuple), relation[0]->end());
@@ -472,7 +472,7 @@ void FullRelationIR::removeDuplicate() {
                 ADD_TO_TUPLE(7, begin_tuple, end_tuple, relation);
                 auto zip_begin = thrust::make_zip_iterator(begin_tuple);
                 auto zip_end = thrust::make_zip_iterator(end_tuple);
-                thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col8());
+                // thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col8());
                 auto new_end = thrust::unique(zip_begin, zip_end);
                 auto it_end_tuple = new_end.get_iterator_tuple();
                 relation[0]->erase(thrust::get<0>(it_end_tuple), relation[0]->end());
@@ -499,7 +499,7 @@ void FullRelationIR::removeDuplicate() {
                 ADD_TO_TUPLE(8, begin_tuple, end_tuple, relation);
                 auto zip_begin = thrust::make_zip_iterator(begin_tuple);
                 auto zip_end = thrust::make_zip_iterator(end_tuple);
-                thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col9());
+                // thrust::sort(thrust::device, zip_begin, zip_end, cmp_first_col9());
                 auto new_end = thrust::unique(zip_begin, zip_end);
                 auto it_end_tuple = new_end.get_iterator_tuple();
                 relation[0]->erase(thrust::get<0>(it_end_tuple), relation[0]->end());
@@ -750,21 +750,6 @@ void FullRelationIR::movePeer(size_t src_device_id, size_t dest_device_id) {
 
     if (relationSize == 0) return;
 
-    // TODO: remove test copy
-    // cudaSetDevice(src_device_id);
-    // std::cout << "Before transfer device : " << src_device_id << "\n";
-    // auto copy_size = (relation[0]->size() < 10)? relation[0]->size() : 10;
-    // std::cout << "copy_size : " << copy_size << "\n";
-    // for (size_t i = 0; i < columnNum; ++i) {
-    //     thrust::host_vector<TYPEID> hh(copy_size);
-    //     thrust::copy(relation[i]->begin(), relation[i]->begin() + copy_size, hh.begin());
-    //     std::cout << "[" << i << "] : ";
-    //     for (size_t k = 0; k < copy_size; ++k) {
-    //         std::cout << hh[k] << " ";
-    //     }
-    //     std::cout << '\n';
-    // }
-
     // Select destination device to work with
     cudaSetDevice(dest_device_id);
     std::vector<TYPEID_DEVICE_VEC*> tmpRelation(columnNum);
@@ -783,19 +768,6 @@ void FullRelationIR::movePeer(size_t src_device_id, size_t dest_device_id) {
         relation[i] = tmpRelation[i];
     }
     // std::cout << "Finish transfer\n";
-
-    // TODO: remove test copy
-    // cudaSetDevice(dest_device_id);
-    // std::cout << "After transfer device : " << dest_device_id << "\n";
-    // for (size_t i = 0; i < columnNum; ++i) {
-    //     thrust::host_vector<TYPEID> hh(copy_size);
-    //     thrust::copy(relation[i]->begin(), relation[i]->begin() + copy_size, hh.begin());
-    //     std::cout << "[" << i << "] : ";
-    //     for (size_t k = 0; k < copy_size; ++k) {
-    //         std::cout << hh[k] << " ";
-    //     }
-    //     std::cout << "\n";
-    // }
 }
 
 void FullRelationIR::print() const {

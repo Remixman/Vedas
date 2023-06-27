@@ -93,7 +93,6 @@ DataIndex TriplePatternDataIndex::retrieveMinLenDataIndex(size_t idx) {
     return *minLenDataIndex;
 }
 
-// QueryExecutor::QueryExecutor(VedasStorage *vedasStorage, ctpl::thread_pool *threadPool, mgpu::standard_context_t* context, int plan_id) {
 QueryExecutor::QueryExecutor(VedasStorage *vedasStorage, ExecutionWorker *worker, mgpu::standard_context_t* context) {
     this->vedasStorage = vedasStorage;
     this->worker = worker;
@@ -420,7 +419,7 @@ void QueryExecutor::query(SparqlQuery &sparqlQuery, SparqlResult &sparqlResult) 
     // std::cout << "processGpuCount : " << processGpuCount << "\n";
     // plan.print();
     plan.execute(sparqlResult, processGpuCount);
-#ifdef AUTO_PLANNER
+#ifdef SAVE_PLAN_TREE
     auto unixtime = std::chrono::system_clock::now();
     std::stringstream ss;
     ss << "plan_" << std::chrono::duration_cast<std::chrono::seconds>(unixtime.time_since_epoch()).count() << ".gv";
@@ -506,11 +505,6 @@ void QueryExecutor::updateEmptyIntervalDict(std::string &variable, std::pair<siz
     }
     
     if (secondMaxPair.first > maxPair.first) std::swap(secondMaxPair, maxPair);
-    
-    // Test print
-    // std::cout << maxPair.first << ',' << maxPair.second << '\n';
-    // std::cout << secondMaxPair.first << ',' << secondMaxPair.second << '\n';
-    // std::cout << " ----- \n";
     
     empty_interval_dict.updateBound(variable, secondMaxPair.first, secondMaxPair.second, maxPair.first, maxPair.second);
 }

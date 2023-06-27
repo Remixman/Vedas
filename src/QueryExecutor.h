@@ -85,11 +85,9 @@ public:
 
 private:
     VedasStorage* vedasStorage;
-    // ctpl::thread_pool *threadPool;
     ExecutionWorker *worker;
     mgpu::standard_context_t* context;
 
-    int plan_id; // TODO: remove this
     std::map< std::string, std::pair<TYPEID, TYPEID> > variables_bound;
     std::map< std::string, DataIndex > variables_data_index;
     EmptyIntervalDict empty_interval_dict;

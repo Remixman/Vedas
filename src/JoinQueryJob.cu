@@ -62,7 +62,7 @@ int JoinQueryJob::startJob(int gpuId) {
 
     QueryExecutor::join_ns += totalNanosec;
 
-    return 0; // TODO: -1 if error
+    return 0;
 }
 
 mgpu::mem_t<int2> JoinQueryJob::innerJoinMulti(TYPEID* a, int a_count, TYPEID* b, int b_count) {

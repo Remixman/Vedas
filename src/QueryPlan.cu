@@ -95,7 +95,7 @@ void QueryPlan::execute(SparqlResult &sparqlResult, int processGpuCount) {
                 // std::cout << "Thread " << this_id << " execute time : " << std::setprecision(3) << jobtime / 1e6 << " ms. ("
                 // << std::setprecision(8) << jobtime << " ns.)\n";
                 
-                // TODO: for job in dynamic queue
+                // For job in dynamic queue
                 for (size_t d = 0; d < dynamicQueue.size(); ++d) {
                     // finish job
                     if (jobFinished == 0) {
@@ -139,19 +139,11 @@ void QueryPlan::execute(SparqlResult &sparqlResult, int processGpuCount) {
                         bool isLastJoin = dynamicQueue.size() - 1 == d;
                         if (isLastJoin) {
                             FullRelationIR *irResult = dynamic_cast<FullRelationIR*>(dynamicQueue[d]->getIR());
-                            bool hasRemove = false; // XXX: Use for sort condition
                             for (int i = irResult->getColumnNum() - 1; i >= 1; --i) {
                                 if (this->query_variable_counter[irResult->getHeader(i)] == 0) {
-                                    irResult->removeColumn(i); hasRemove = true;
+                                    irResult->removeColumn(i);
                                 }
                             }
-                            // Sort columns
-                            /*for (size_t i = 0; i < select_variables.size(); i++) {
-                                size_t ci = irResult->getColumnId(select_variables[i]);
-                                if (ci != i) {
-                                    irResult->swapColumn(ci, i);
-                                }
-                            }*/
                             irResult->removeDuplicate();
 
                             sparqlResult.setResult(irResult);

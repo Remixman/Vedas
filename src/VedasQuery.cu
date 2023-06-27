@@ -127,10 +127,10 @@ int main(int argc, char **argv) {
     std::cout << "Dict/Data Loading time : " << std::setprecision(3) << std::chrono::duration_cast<std::chrono::milliseconds>(load_end-load_start).count() << " ms.\n";
     std::cout << "\n\n";
 
-    double psBc = vedasStorage->psBoundaryCompactness();
-    double poBc = vedasStorage->poBoundaryCompactness();
-    std::cout << "PSO Boundary Compactness : " << std::setprecision(3) << log(psBc) << " (" << psBc << ")\n";
-    std::cout << "POS Boundary Compactness : " << std::setprecision(3) << log(poBc) << " (" << poBc << ")\n";
+    // double psBc = vedasStorage->psBoundaryCompactness();
+    // double poBc = vedasStorage->poBoundaryCompactness();
+    // std::cout << "PSO Boundary Compactness : " << std::setprecision(3) << log(psBc) << " (" << psBc << ")\n";
+    // std::cout << "POS Boundary Compactness : " << std::setprecision(3) << log(poBc) << " (" << poBc << ")\n";
 
     std::string cmd_line, op, arg, sparql_query;
     while (true) {

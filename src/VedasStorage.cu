@@ -336,13 +336,6 @@ void VedasStorage::createIndex(const char *index_name,
         // d_2nd_col_per_1st_col[value_size - 1] = d_values2_1.size() - d_offsets.back();
         // TYPEID_HOST_VEC 2nd_col_per_1st_col(value_size);
         // thrust::copy(d_2nd_col_per_1st_col.begin(), d_2nd_col_per_1st_col.end(), 2nd_col_per_1st_col.begin());
-
-        // // TODO: only test
-        // std::string filename = index_name + ".txt";
-        // std::ofstream diff; diff.open(filename, std::ios::out);
-        // diff << 2nd_col_per_1st_col.size() << "\n";
-        // for (auto d: 2nd_col_per_1st_col) diff << d << "\n";
-        // diff.close();
     }
 
     // Create 2nd level index

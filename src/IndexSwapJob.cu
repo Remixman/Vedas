@@ -91,7 +91,7 @@ int IndexSwapJob::startJob(int gpuId) {
     
     this->intermediateResult = beforeIr;
 
-    return 0; // TODO: -1 if error
+    return 0;
 }
 
 std::string IndexSwapJob::jobTypeName() const {

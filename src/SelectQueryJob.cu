@@ -266,7 +266,7 @@ int SelectQueryJob::startJob(int gpuId) {
         assert(false);
     }
 
-    return 0; // TODO: -1 if error
+    return 0;
 }
 
 IR* SelectQueryJob::getIR() {
